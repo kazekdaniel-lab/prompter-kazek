@@ -1,0 +1,392 @@
+/* Prompter - prosty teleprompter do self-video. Wszystko lokalnie na urządzeniu. */
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const root = document.documentElement;
+
+  // ---- Elementy ----
+  const cam = $('cam'), camMsg = $('camMsg'), camMsgText = $('camMsgText');
+  const prompter = $('prompter'), viewport = $('viewport'), textEl = $('text');
+  const recBtn = $('recBtn'), recbar = $('recbar'), recTime = $('recTime');
+  const countEl = $('count'), countNum = $('countNum');
+  const backdrop = $('backdrop'), toast = $('toast');
+  const spdLab = $('spdLab');
+
+  // ---- Ustawienia (localStorage) ----
+  const SET_KEY = 'tp_settings_v1';
+  const defaults = { speed:70, font:42, panel:55, width:92, opac:50, countdown:true, mirror:true, back:false };
+  let S = load(SET_KEY, defaults);
+
+  function load(key, fb){ try{ return Object.assign({}, fb, JSON.parse(localStorage.getItem(key)||'{}')); }catch(e){ return {...fb}; } }
+  function save(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
+  const saveSettings = () => save(SET_KEY, S);
+
+  // ---- Skrypty (localStorage) ----
+  const SCR_KEY = 'tp_scripts_v1', LAST_KEY = 'tp_last_v1';
+  let scripts = load2(SCR_KEY, null);
+  if (!Array.isArray(scripts) || !scripts.length){
+    scripts = [{ id: uid(), name:'Przykład', text:
+      'To jest Twój teleprompter.\n\nWklej tu swój tekst, ustaw prędkość suwakiem i tapnij czerwony przycisk, żeby nagrać.\n\nPatrz w obiektyw u góry - tekst przewija się tuż obok, więc na nagraniu wygląda, jakbyś mówił prosto do kamery.' }];
+    save(SCR_KEY, scripts);
+  }
+  let currentId = localStorage.getItem(LAST_KEY) || scripts[0].id;
+  if (!scripts.some(s => s.id === currentId)) currentId = scripts[0].id;
+
+  function load2(key){ try{ return JSON.parse(localStorage.getItem(key)); }catch(e){ return null; } }
+  function saveScripts(){ save(SCR_KEY, scripts); }
+  function uid(){ return 's' + Math.abs((Date.now() ^ (performance.now()*1000|0))).toString(36) + (scripts?scripts.length:0); }
+  function currentScript(){ return scripts.find(s => s.id === currentId) || scripts[0]; }
+
+  // ---- Toast ----
+  let toastT;
+  function showToast(msg){ toast.textContent = msg; toast.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(()=>toast.classList.remove('show'), 2200); }
+
+  // ======================================================
+  //  Kamera
+  // ======================================================
+  let stream = null;
+  async function initCamera(){
+    stopStream();
+    const constraints = {
+      audio: true,
+      video: { facingMode: S.back ? 'environment' : 'user',
+               width:{ ideal:1920 }, height:{ ideal:1080 } }
+    };
+    try{
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      cam.srcObject = stream;
+      cam.classList.toggle('no-mirror', !(S.mirror && !S.back));
+      camMsg.classList.remove('show');
+      await cam.play().catch(()=>{});
+    }catch(err){
+      camMsg.classList.add('show');
+      camMsgText.textContent = errText(err);
+    }
+  }
+  function stopStream(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+  function errText(err){
+    const n = err && err.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError')
+      return 'Brak zgody na kamerę/mikrofon. Wejdź w ustawienia strony i zezwól, potem tapnij poniżej.';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError')
+      return 'Nie znaleziono kamery. Podłącz/odblokuj kamerę i spróbuj ponownie.';
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1')
+      return 'Kamera działa tylko przez HTTPS. Otwórz stronę z adresu https://…';
+    return 'Nie udało się włączyć kamery. Tapnij, aby spróbować ponownie.';
+  }
+  $('camRetry').addEventListener('click', initCamera);
+
+  // ======================================================
+  //  Silnik przewijania
+  // ======================================================
+  let playing = false, scrollPos = 0, lastT = 0, rafId = null, maxScroll = 0;
+
+  function renderText(){
+    textEl.textContent = currentScript().text || '';
+    requestAnimationFrame(relayout);
+  }
+  function relayout(){
+    const vh = viewport.clientHeight;
+    const readY = vh * parseFloat(getComputedStyle(root).getPropertyValue('--reading'));
+    textEl.style.paddingTop = readY + 'px';
+    textEl.style.paddingBottom = vh + 'px';
+    maxScroll = Math.max(0, textEl.scrollHeight - vh);
+    applyScroll();
+  }
+  function applyScroll(){ textEl.style.transform = `translateX(-50%) translateY(${-scrollPos}px)`; }
+
+  function tick(t){
+    if (playing){
+      if (!lastT) lastT = t;
+      const dt = (t - lastT) / 1000; lastT = t;
+      scrollPos += S.speed * dt;
+      if (scrollPos >= maxScroll){ scrollPos = maxScroll; setPlaying(false); }
+      applyScroll();
+    } else { lastT = 0; }
+    rafId = requestAnimationFrame(tick);
+  }
+  function setPlaying(v){
+    playing = v; lastT = 0;
+    $('playIcon').innerHTML = v
+      ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>'
+      : '<path d="M8 5v14l11-7z"/>';
+    $('playLabel').textContent = v ? 'Pauza' : 'Przewiń';
+  }
+  function restartScroll(){ scrollPos = 0; applyScroll(); }
+
+  $('btnPlay').addEventListener('click', () => setPlaying(!playing));
+  $('btnRestart').addEventListener('click', () => { restartScroll(); if(!recording) setPlaying(false); });
+
+  // Tap na panelu = play/pauza; podwójny tap = od nowa
+  let lastTap = 0;
+  prompter.addEventListener('click', (e) => {
+    if (recording) return;
+    const now = Date.now();
+    if (now - lastTap < 300){ restartScroll(); setPlaying(false); }
+    else setPlaying(!playing);
+    lastTap = now;
+  });
+
+  // ======================================================
+  //  Prędkość (szybkie +/- na prawej krawędzi)
+  // ======================================================
+  function setSpeed(v){
+    S.speed = Math.min(260, Math.max(15, Math.round(v)));
+    spdLab.textContent = S.speed; $('spdLab').textContent = S.speed;
+    $('rSpeed').value = S.speed; $('vSpeed').textContent = S.speed;
+    saveSettings();
+  }
+  $('spdUp').addEventListener('click', () => setSpeed(S.speed + 10));
+  $('spdDn').addEventListener('click', () => setSpeed(S.speed - 10));
+
+  // ======================================================
+  //  Nagrywanie
+  // ======================================================
+  let recorder = null, chunks = [], recording = false, recordedBlob = null, recStart = 0, recTimer = null, mime = '';
+
+  function pickMime(){
+    if (!('MediaRecorder' in window)) return '';
+    const cands = ['video/mp4;codecs=h264,aac','video/mp4','video/webm;codecs=vp9,opus',
+                   'video/webm;codecs=vp8,opus','video/webm'];
+    for (const c of cands){ try{ if (MediaRecorder.isTypeSupported(c)) return c; }catch(e){} }
+    return '';
+  }
+
+  recBtn.addEventListener('click', () => { if (recording) stopRecording(); else startFlow(); });
+
+  async function startFlow(){
+    if (!stream){ await initCamera(); if (!stream){ showToast('Najpierw włącz kamerę'); return; } }
+    if (!('MediaRecorder' in window)){ showToast('Ta przeglądarka nie nagrywa wideo'); return; }
+    if (S.countdown) await countdown(3);
+    startRecording();
+  }
+
+  function countdown(n){
+    return new Promise((resolve) => {
+      countEl.classList.add('show');
+      countNum.textContent = n;
+      const iv = setInterval(() => {
+        n--;
+        if (n <= 0){ clearInterval(iv); countEl.classList.remove('show'); resolve(); }
+        else countNum.textContent = n;
+      }, 1000);
+    });
+  }
+
+  function startRecording(){
+    chunks = []; recordedBlob = null; mime = pickMime();
+    try{ recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+    catch(e){ recorder = new MediaRecorder(stream); }
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = onRecStop;
+    recorder.start();
+    recording = true;
+    recBtn.classList.add('recording');
+    recbar.classList.add('show');
+    setChromeHidden(true);
+    restartScroll(); setPlaying(true);
+    recStart = performance.now();
+    updateRecTime();
+    recTimer = setInterval(updateRecTime, 250);
+  }
+
+  function stopRecording(){
+    if (!recorder || !recording) return;
+    recording = false;
+    setPlaying(false);
+    clearInterval(recTimer);
+    recBtn.classList.remove('recording');
+    recbar.classList.remove('show');
+    setChromeHidden(false);
+    try{ recorder.stop(); }catch(e){}
+  }
+
+  function updateRecTime(){
+    const s = Math.floor((performance.now() - recStart) / 1000);
+    recTime.textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  }
+
+  function onRecStop(){
+    const type = (chunks[0] && chunks[0].type) || mime || 'video/mp4';
+    recordedBlob = new Blob(chunks, { type });
+    if (!recordedBlob.size){ showToast('Puste nagranie'); return; }
+    const url = URL.createObjectURL(recordedBlob);
+    const rv = $('reviewVid');
+    rv.src = url; rv.muted = false;
+    openSheet('reviewSheet');
+  }
+
+  // Zapis / udostępnianie
+  $('saveRec').addEventListener('click', shareRecording);
+  async function shareRecording(){
+    if (!recordedBlob) return;
+    const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
+    const name = 'prompter-' + tstamp() + '.' + ext;
+    const file = new File([recordedBlob], name, { type: recordedBlob.type });
+    if (navigator.canShare && navigator.canShare({ files:[file] })){
+      try{ await navigator.share({ files:[file], title:'Nagranie' }); return; }
+      catch(e){ if (e && e.name === 'AbortError') return; }
+    }
+    // fallback: pobranie pliku
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(recordedBlob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('Pobrano do plików');
+  }
+  function tstamp(){ const d = new Date(); const p = (x)=>String(x).padStart(2,'0');
+    return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds()); }
+
+  $('againRec').addEventListener('click', () => { closeSheet(); restartScroll(); });
+
+  function setChromeHidden(hidden){ $('bar').classList.toggle('hidden', hidden); }
+
+  // ======================================================
+  //  Bottom sheets
+  // ======================================================
+  let openId = null;
+  function openSheet(id){ if(openId) $(openId).classList.remove('open');
+    openId = id; $(id).classList.add('open'); backdrop.classList.add('show'); }
+  function closeSheet(){ if(openId) $(openId).classList.remove('open'); openId=null; backdrop.classList.remove('show'); }
+  backdrop.addEventListener('click', closeSheet);
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheet));
+  $('btnSettings').addEventListener('click', () => openSheet('settingsSheet'));
+  $('btnScripts').addEventListener('click', () => { renderScriptList(); hideEditor(); openSheet('scriptsSheet'); });
+
+  // ======================================================
+  //  Panel skryptów
+  // ======================================================
+  const scriptList = $('scriptList'), editor = $('editor'),
+        nameInput = $('scriptName'), textInput = $('scriptText');
+  let editingId = null;
+
+  function renderScriptList(){
+    scriptList.innerHTML = '';
+    scripts.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'sitem' + (s.id === currentId ? ' active' : '');
+      const preview = (s.text||'').replace(/\s+/g,' ').slice(0,42);
+      const nm = document.createElement('div'); nm.className='nm';
+      nm.innerHTML = `${esc(s.name||'Bez nazwy')}<div class="pv">${esc(preview)||'&nbsp;'}</div>`;
+      nm.addEventListener('click', () => { selectScript(s.id); closeSheet(); });
+      const eBtn = document.createElement('button'); eBtn.className='iconbtn'; eBtn.textContent='✎';
+      eBtn.addEventListener('click', () => showEditor(s.id));
+      const dBtn = document.createElement('button'); dBtn.className='iconbtn'; dBtn.textContent='🗑';
+      dBtn.addEventListener('click', () => deleteScript(s.id));
+      div.appendChild(nm); div.appendChild(eBtn); div.appendChild(dBtn);
+      scriptList.appendChild(div);
+    });
+  }
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function selectScript(id){ currentId = id; localStorage.setItem(LAST_KEY, id); renderText(); restartScroll(); setPlaying(false); }
+
+  function showEditor(id){
+    editingId = id;
+    const s = id ? scripts.find(x=>x.id===id) : null;
+    nameInput.value = s ? s.name : '';
+    textInput.value = s ? s.text : '';
+    editor.style.display = 'block';
+    editor.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+  function hideEditor(){ editor.style.display = 'none'; editingId = null; }
+  $('newScript').addEventListener('click', () => showEditor(null));
+  $('cancelEdit').addEventListener('click', hideEditor);
+
+  $('saveScript').addEventListener('click', () => {
+    const name = nameInput.value.trim() || 'Bez nazwy';
+    const text = textInput.value;
+    if (editingId){ const s = scripts.find(x=>x.id===editingId); if(s){ s.name=name; s.text=text; } }
+    else { const id = uid(); scripts.push({ id, name, text }); currentId = id; localStorage.setItem(LAST_KEY, id); }
+    saveScripts(); hideEditor(); renderScriptList();
+    if (!editingId || editingId === currentId) renderText();
+    showToast('Zapisano');
+  });
+
+  function deleteScript(id){
+    if (scripts.length <= 1){ showToast('Musi zostać co najmniej 1 skrypt'); return; }
+    if (!confirm('Usunąć ten skrypt?')) return;
+    scripts = scripts.filter(s => s.id !== id);
+    if (currentId === id){ currentId = scripts[0].id; localStorage.setItem(LAST_KEY, currentId); renderText(); }
+    saveScripts(); renderScriptList();
+  }
+
+  // ======================================================
+  //  Ustawienia (suwaki + przełączniki)
+  // ======================================================
+  function applyVars(){
+    root.style.setProperty('--font', S.font + 'px');
+    root.style.setProperty('--panel-h', S.panel);
+    root.style.setProperty('--text-w', S.width);
+    root.style.setProperty('--panel-op', (S.opac/100).toFixed(2));
+    requestAnimationFrame(relayout);
+  }
+  function bindRange(id, key, label, fmt){
+    const el = $(id), out = $(label);
+    el.value = S[key];
+    out.textContent = fmt ? fmt(S[key]) : S[key];
+    el.addEventListener('input', () => {
+      S[key] = parseFloat(el.value);
+      out.textContent = fmt ? fmt(S[key]) : S[key];
+      if (key === 'speed'){ spdLab.textContent = S.speed; }
+      applyVars(); saveSettings();
+    });
+  }
+  bindRange('rSpeed','speed','vSpeed');
+  bindRange('rFont','font','vFont');
+  bindRange('rPanel','panel','vPanel', v => v+'%');
+  bindRange('rWidth','width','vWidth', v => v+'%');
+  bindRange('rOpac','opac','vOpac', v => v+'%');
+
+  function bindToggle(id, key, onChange){
+    const el = $(id);
+    el.classList.toggle('on', !!S[key]);
+    el.addEventListener('click', () => {
+      S[key] = !S[key]; el.classList.toggle('on', S[key]); saveSettings();
+      if (onChange) onChange();
+    });
+  }
+  bindToggle('tCount','countdown');
+  bindToggle('tMirror','mirror', () => cam.classList.toggle('no-mirror', !(S.mirror && !S.back)));
+  bindToggle('tBack','back', () => initCamera());
+
+  // ======================================================
+  //  Wake Lock (ekran nie gaśnie)
+  // ======================================================
+  let wl = null;
+  async function acquireWake(){
+    try{ if ('wakeLock' in navigator){ wl = await navigator.wakeLock.request('screen'); } }catch(e){}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') acquireWake(); });
+
+  // ======================================================
+  //  Instrukcja "Dodaj do ekranu głównego" (iOS Safari)
+  // ======================================================
+  (function installHint(){
+    const standalone = window.navigator.standalone === true ||
+      window.matchMedia('(display-mode: standalone)').matches;
+    const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (!standalone && iOS && !localStorage.getItem('tp_install_dismissed')){
+      const el = $('install'); el.classList.add('show');
+      $('installClose').addEventListener('click', () => { el.classList.remove('show'); localStorage.setItem('tp_install_dismissed','1'); });
+    }
+  })();
+
+  // ======================================================
+  //  Start
+  // ======================================================
+  window.addEventListener('resize', () => requestAnimationFrame(relayout));
+  window.addEventListener('orientationchange', () => setTimeout(relayout, 300));
+  setSpeed(S.speed);
+  applyVars();
+  renderText();
+  setPlaying(false);
+  rafId = requestAnimationFrame(tick);
+  acquireWake();
+  initCamera();
+
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  }
+})();

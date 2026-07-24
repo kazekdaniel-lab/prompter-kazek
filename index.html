@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1">
+<title>Prompter</title>
+<meta name="description" content="Prosty teleprompter do self-video. Kamera do siebie, przewijany tekst przy obiektywie, nagrywanie na telefonie.">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="./manifest.webmanifest">
+<!-- iOS "Dodaj do ekranu głównego" -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prompter">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<style>
+  :root{
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --accent: #ff3b30;
+    --panel-h: 55;      /* % wysokości ekranu */
+    --panel-op: 0.5;    /* krycie tła panelu */
+    --text-w: 92;       /* % szerokości panelu */
+    --font: 42px;
+    --reading: 0.22;    /* linia czytania: ułamek wysokości panelu */
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; background:#000; overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:#fff; -webkit-user-select:none; user-select:none; }
+  #app{ position:fixed; inset:0; height:100dvh; }
+
+  /* ---- Kamera ---- */
+  #cam{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#111;
+    transform:scaleX(-1); /* podgląd lustrzany; nagranie zostaje niezlustrzane */ }
+  #cam.no-mirror{ transform:none; }
+  #camMsg{ position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    text-align:center; padding:32px; color:#bbb; font-size:15px; line-height:1.5; z-index:5; }
+  #camMsg.show{ display:flex; }
+  #camMsg button{ margin-top:14px; }
+
+  /* ---- Panel promptera ---- */
+  #prompter{ position:absolute; left:0; right:0; top:calc(var(--safe-t) + 6px);
+    height:calc(var(--panel-h) * 1dvh); max-height:88dvh; z-index:10;
+    background:rgba(0,0,0,var(--panel-op));
+    -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
+    border-radius:16px; margin:0 8px; overflow:hidden; touch-action:none; }
+  #viewport{ position:absolute; inset:0; overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 9%,#000 88%,transparent 100%);
+    mask-image:linear-gradient(180deg,transparent 0,#000 9%,#000 88%,transparent 100%); }
+  #text{ position:absolute; left:50%; top:0; transform:translateX(-50%) translateY(0);
+    width:calc(var(--text-w) * 1%); will-change:transform;
+    font-size:var(--font); line-height:1.4; font-weight:700; text-align:center;
+    letter-spacing:.2px; text-shadow:0 2px 10px rgba(0,0,0,.85); white-space:pre-wrap;
+    word-break:break-word; }
+  /* linia czytania */
+  #readline{ position:absolute; left:0; right:0; top:calc(var(--reading)*100%);
+    height:0; z-index:11; pointer-events:none; }
+  #readline::before, #readline::after{ content:""; position:absolute; top:-7px;
+    border-top:7px solid transparent; border-bottom:7px solid transparent; opacity:.85; }
+  #readline::before{ left:0; border-left:11px solid var(--accent); }
+  #readline::after{ right:0; border-right:11px solid var(--accent); }
+  #readband{ position:absolute; left:0; right:0; top:calc(var(--reading)*100%);
+    height:calc(var(--font) * 1.4); transform:translateY(-6px); z-index:10; pointer-events:none;
+    background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.06),rgba(255,255,255,0)); }
+
+  /* ---- Górny pasek nagrywania ---- */
+  #recbar{ position:absolute; top:calc(var(--safe-t) + 14px); left:0; right:0; z-index:30;
+    display:none; justify-content:center; gap:8px; align-items:center; pointer-events:none; }
+  #recbar.show{ display:flex; }
+  #recbar .dot{ width:11px; height:11px; border-radius:50%; background:var(--accent);
+    animation:blink 1s steps(1) infinite; }
+  #recbar .t{ font-variant-numeric:tabular-nums; font-weight:600; font-size:15px;
+    background:rgba(0,0,0,.5); padding:5px 11px; border-radius:20px; }
+  @keyframes blink{ 50%{ opacity:.25 } }
+
+  /* ---- Szybka prędkość (prawa krawędź, także podczas nagrania) ---- */
+  #speedq{ position:absolute; right:10px; top:50%; transform:translateY(-50%); z-index:25;
+    display:flex; flex-direction:column; gap:10px; }
+  .rbtn{ width:46px; height:46px; border-radius:50%; border:none; color:#fff; font-size:22px;
+    background:rgba(0,0,0,.42); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    display:flex; align-items:center; justify-content:center; font-weight:600; }
+  .rbtn:active{ background:rgba(0,0,0,.62); }
+  #speedq .lab{ text-align:center; font-size:11px; color:#eee; background:rgba(0,0,0,.42);
+    border-radius:12px; padding:3px 0; font-variant-numeric:tabular-nums; }
+
+  /* ---- Dolny pasek ---- */
+  #bar{ position:absolute; left:0; right:0; bottom:calc(var(--safe-b) + 14px); z-index:30;
+    display:flex; align-items:center; justify-content:space-around; padding:0 16px; }
+  #bar.hidden{ display:none; }
+  .cbtn{ background:none; border:none; color:#fff; display:flex; flex-direction:column;
+    align-items:center; gap:4px; font-size:11px; opacity:.92; width:56px; }
+  .cbtn svg{ width:26px; height:26px; }
+  .cbtn:active{ opacity:.6; }
+  #recBtn{ width:72px; height:72px; border-radius:50%; border:4px solid rgba(255,255,255,.9);
+    background:transparent; display:flex; align-items:center; justify-content:center; padding:0; }
+  #recBtn .inner{ width:56px; height:56px; border-radius:50%; background:var(--accent);
+    transition:border-radius .15s, width .15s, height .15s; }
+  #recBtn.recording .inner{ width:28px; height:28px; border-radius:7px; }
+
+  /* ---- Odliczanie ---- */
+  #count{ position:absolute; inset:0; z-index:40; display:none; align-items:center;
+    justify-content:center; background:rgba(0,0,0,.35); font-size:150px; font-weight:800;
+    text-shadow:0 6px 30px rgba(0,0,0,.6); }
+  #count.show{ display:flex; }
+
+  /* ---- Bottom sheets ---- */
+  .sheet{ position:absolute; left:0; right:0; bottom:0; z-index:50; transform:translateY(101%);
+    transition:transform .28s cubic-bezier(.32,.72,0,1); max-height:86dvh; overflow-y:auto;
+    background:#161616; border-radius:20px 20px 0 0; padding:8px 18px calc(var(--safe-b) + 22px);
+    box-shadow:0 -10px 40px rgba(0,0,0,.5); -webkit-overflow-scrolling:touch; }
+  .sheet.open{ transform:translateY(0); }
+  .sheet .grab{ width:40px; height:5px; border-radius:3px; background:#444; margin:8px auto 14px; }
+  .sheet h2{ font-size:17px; margin:2px 0 16px; font-weight:700; display:flex;
+    justify-content:space-between; align-items:center; }
+  .sheet h2 .x{ font-size:15px; color:#8a8a8a; background:#262626; border:none; color:#ccc;
+    padding:7px 13px; border-radius:20px; }
+  #backdrop{ position:absolute; inset:0; z-index:45; background:rgba(0,0,0,.45);
+    opacity:0; pointer-events:none; transition:opacity .28s; }
+  #backdrop.show{ opacity:1; pointer-events:auto; }
+
+  /* suwaki */
+  .row{ margin:18px 0; }
+  .row .head{ display:flex; justify-content:space-between; font-size:14px; color:#ddd;
+    margin-bottom:9px; }
+  .row .head b{ color:#fff; font-variant-numeric:tabular-nums; font-weight:600; }
+  input[type=range]{ -webkit-appearance:none; width:100%; height:30px; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track{ height:6px; border-radius:3px; background:#333; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:28px; height:28px;
+    margin-top:-11px; border-radius:50%; background:#fff; box-shadow:0 1px 5px rgba(0,0,0,.5); }
+  .toggle{ display:flex; justify-content:space-between; align-items:center; margin:16px 0;
+    font-size:15px; color:#eee; }
+  .sw{ width:52px; height:31px; border-radius:16px; background:#3a3a3c; position:relative;
+    transition:background .2s; flex:none; }
+  .sw.on{ background:#34c759; }
+  .sw::after{ content:""; position:absolute; top:2px; left:2px; width:27px; height:27px;
+    border-radius:50%; background:#fff; transition:transform .2s; }
+  .sw.on::after{ transform:translateX(21px); }
+
+  /* skrypty */
+  .slist{ display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+  .sitem{ display:flex; align-items:center; gap:10px; background:#202020; border-radius:12px;
+    padding:13px 14px; }
+  .sitem.active{ outline:2px solid var(--accent); }
+  .sitem .nm{ flex:1; font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; }
+  .sitem .pv{ font-size:12px; color:#888; font-weight:400; }
+  .iconbtn{ background:#2b2b2b; border:none; color:#ddd; width:38px; height:38px; border-radius:10px;
+    font-size:16px; flex:none; }
+  .iconbtn:active{ background:#3a3a3a; }
+  .btn{ border:none; border-radius:13px; padding:15px; font-size:16px; font-weight:600; width:100%;
+    background:#2b2b2b; color:#fff; }
+  .btn.primary{ background:var(--accent); }
+  .btn.ghost{ background:transparent; color:#8a8a8a; }
+  .btn:active{ opacity:.7; }
+  input[type=text]{ width:100%; background:#202020; border:1px solid #333; border-radius:11px;
+    color:#fff; padding:13px; font-size:15px; margin-bottom:10px; }
+  textarea{ width:100%; min-height:180px; background:#202020; border:1px solid #333; border-radius:11px;
+    color:#fff; padding:13px; font-size:16px; line-height:1.5; resize:vertical; font-family:inherit; }
+  .editrow{ display:flex; gap:10px; margin-top:12px; }
+  .editrow .btn{ flex:1; }
+  .hint{ font-size:12.5px; color:#7d7d7d; line-height:1.5; margin-top:6px; }
+
+  /* review */
+  #reviewVid{ width:100%; border-radius:14px; background:#000; max-height:52dvh; margin-bottom:14px; }
+
+  /* install hint */
+  #install{ position:absolute; left:12px; right:12px; bottom:calc(var(--safe-b) + 96px); z-index:35;
+    display:none; background:rgba(28,28,30,.94); -webkit-backdrop-filter:blur(10px);
+    backdrop-filter:blur(10px); border-radius:14px; padding:13px 15px; font-size:13px; color:#eee;
+    line-height:1.45; box-shadow:0 6px 24px rgba(0,0,0,.4); }
+  #install.show{ display:block; }
+  #install b{ color:#fff; }
+  #install .close{ position:absolute; top:6px; right:6px; background:none; border:none; color:#888;
+    font-size:20px; padding:6px 10px; }
+
+  /* toast */
+  #toast{ position:absolute; left:50%; bottom:calc(var(--safe-b) + 96px); transform:translateX(-50%);
+    z-index:60; background:rgba(0,0,0,.85); color:#fff; padding:11px 18px; border-radius:22px;
+    font-size:14px; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap; }
+  #toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <video id="cam" playsinline autoplay muted></video>
+
+  <div id="camMsg">
+    <div>
+      <div id="camMsgText">Zezwól na dostęp do kamery i mikrofonu, aby nagrywać.</div>
+      <button class="btn primary" id="camRetry" style="width:auto;padding:12px 22px;">Włącz kamerę</button>
+    </div>
+  </div>
+
+  <div id="prompter">
+    <div id="viewport"><div id="text"></div></div>
+    <div id="readband"></div>
+    <div id="readline"></div>
+  </div>
+
+  <div id="recbar"><span class="dot"></span><span class="t" id="recTime">0:00</span></div>
+
+  <div id="speedq">
+    <button class="rbtn" id="spdUp" aria-label="Szybciej">+</button>
+    <div class="lab" id="spdLab">70</div>
+    <button class="rbtn" id="spdDn" aria-label="Wolniej">–</button>
+  </div>
+
+  <div id="bar">
+    <button class="cbtn" id="btnScripts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
+      Skrypty
+    </button>
+    <button class="cbtn" id="btnRestart">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+      Od nowa
+    </button>
+    <button id="recBtn" aria-label="Nagrywaj"><span class="inner"></span></button>
+    <button class="cbtn" id="btnPlay">
+      <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <span id="playLabel">Przewiń</span>
+    </button>
+    <button class="cbtn" id="btnSettings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
+      Ustawienia
+    </button>
+  </div>
+
+  <div id="count"><span id="countNum">3</span></div>
+
+  <div id="install">
+    <button class="close" id="installClose">×</button>
+    <b>Dodaj do ekranu głównego</b>, żeby mieć Prompter jak zwykłą apkę: tapnij <b>Udostępnij</b> (kwadrat ze strzałką) → <b>Do ekranu początkowego</b>.
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- Sheet: skrypty -->
+  <div class="sheet" id="scriptsSheet">
+    <div class="grab"></div>
+    <h2>Skrypty <button class="x" data-close>Gotowe</button></h2>
+    <div class="slist" id="scriptList"></div>
+    <button class="btn" id="newScript">＋ Nowy skrypt</button>
+    <div id="editor" style="display:none; margin-top:18px;">
+      <input type="text" id="scriptName" placeholder="Nazwa (np. Intro, Oferta, Outro)">
+      <textarea id="scriptText" placeholder="Wklej albo napisz tekst do przeczytania..."></textarea>
+      <div class="editrow">
+        <button class="btn ghost" id="cancelEdit">Anuluj</button>
+        <button class="btn primary" id="saveScript">Zapisz</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: ustawienia -->
+  <div class="sheet" id="settingsSheet">
+    <div class="grab"></div>
+    <h2>Ustawienia <button class="x" data-close>Gotowe</button></h2>
+    <div class="row"><div class="head"><span>Prędkość przewijania</span><b id="vSpeed">70</b></div>
+      <input type="range" id="rSpeed" min="15" max="260" step="5"></div>
+    <div class="row"><div class="head"><span>Rozmiar czcionki</span><b id="vFont">42</b></div>
+      <input type="range" id="rFont" min="24" max="86" step="1"></div>
+    <div class="row"><div class="head"><span>Wysokość panelu</span><b id="vPanel">55%</b></div>
+      <input type="range" id="rPanel" min="28" max="85" step="1"></div>
+    <div class="row"><div class="head"><span>Szerokość tekstu</span><b id="vWidth">92%</b></div>
+      <input type="range" id="rWidth" min="45" max="100" step="1"></div>
+    <div class="row"><div class="head"><span>Krycie tła panelu</span><b id="vOpac">50%</b></div>
+      <input type="range" id="rOpac" min="0" max="90" step="1"></div>
+    <div class="toggle"><span>Odliczanie 3-2-1 przed nagraniem</span><div class="sw on" id="tCount"></div></div>
+    <div class="toggle"><span>Lustrzany podgląd (nagranie zawsze normalne)</span><div class="sw on" id="tMirror"></div></div>
+    <div class="toggle"><span>Kamera tylna (zamiast przedniej)</span><div class="sw" id="tBack"></div></div>
+    <p class="hint">Tekst jest tylko na ekranie - w nagraniu go nie ma. Nagrywa się sam obraz z kamery i dźwięk, wszystko zostaje na telefonie.</p>
+  </div>
+
+  <!-- Sheet: podgląd nagrania -->
+  <div class="sheet" id="reviewSheet">
+    <div class="grab"></div>
+    <h2>Nagranie gotowe <button class="x" data-close>Zamknij</button></h2>
+    <video id="reviewVid" playsinline controls></video>
+    <button class="btn primary" id="saveRec" style="margin-bottom:10px;">Zapisz / Udostępnij</button>
+    <button class="btn" id="againRec" style="margin-bottom:10px;">Nagraj ponownie</button>
+    <p class="hint" id="reviewHint">Tapnij „Zapisz / Udostępnij" i wybierz <b>Zapisz wideo</b>, żeby trafiło do rolki.</p>
+  </div>
+
+  <div id="backdrop"></div>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
