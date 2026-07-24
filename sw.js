@@ -1,5 +1,5 @@
 /* Prompter service worker - cache-first shell, działa offline po pierwszym otwarciu. */
-const CACHE = 'tp-shell-v1';
+const CACHE = 'tp-shell-v2';
 const ASSETS = [
   './',
   './index.html',

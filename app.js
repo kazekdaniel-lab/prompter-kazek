@@ -15,7 +15,7 @@
 
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
-  const defaults = { speed:70, font:42, panel:55, width:92, opac:50, countdown:true, mirror:true, back:false };
+  const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, countdown:true, mirror:true, back:false };
   let S = load(SET_KEY, defaults);
 
   function load(key, fb){ try{ return Object.assign({}, fb, JSON.parse(localStorage.getItem(key)||'{}')); }catch(e){ return {...fb}; } }
@@ -57,7 +57,8 @@
     try{
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       cam.srcObject = stream;
-      cam.classList.toggle('no-mirror', !(S.mirror && !S.back));
+      detectZoom();
+      applyZoom();
       camMsg.classList.remove('show');
       await cam.play().catch(()=>{});
     }catch(err){
@@ -77,6 +78,38 @@
     return 'Nie udało się włączyć kamery. Tapnij, aby spróbować ponownie.';
   }
   $('camRetry').addEventListener('click', initCamera);
+
+  // Lustro + zoom (transform ustawiany z JS). Zoom sprzętowy = zmienia realny obraz (jest w nagraniu);
+  // gdy urządzenie go nie ma (częste na przedniej kamerze), zoom cyfrowy przybliża sam podgląd kadru.
+  let hwZoom = false, zoomCaps = null;
+  function applyCamTransform(){
+    const mir = (S.mirror && !S.back) ? -1 : 1;
+    const dz = hwZoom ? 1 : (S.zoom || 1);
+    cam.style.transform = `scaleX(${(mir*dz).toFixed(3)}) scaleY(${dz.toFixed(3)})`;
+  }
+  function detectZoom(){
+    hwZoom = false; zoomCaps = null;
+    try{
+      const vt = stream && stream.getVideoTracks()[0];
+      const caps = vt && vt.getCapabilities ? vt.getCapabilities() : null;
+      if (caps && caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > (caps.zoom.min || 1)){
+        zoomCaps = { min: caps.zoom.min || 1, max: caps.zoom.max, step: caps.zoom.step || 0.1 };
+        hwZoom = true;
+        const rz = $('rZoom');
+        rz.min = zoomCaps.min; rz.max = zoomCaps.max; rz.step = zoomCaps.step;
+        S.zoom = Math.min(zoomCaps.max, Math.max(zoomCaps.min, S.zoom || 1));
+        rz.value = S.zoom; $('vZoom').textContent = (+S.zoom).toFixed(1) + '×';
+      }
+    }catch(e){}
+  }
+  function applyZoom(){
+    const vt = stream && stream.getVideoTracks()[0];
+    if (hwZoom && vt && zoomCaps){
+      const z = Math.min(zoomCaps.max, Math.max(zoomCaps.min, S.zoom));
+      try{ vt.applyConstraints({ advanced:[{ zoom: z }] }); }catch(e){}
+    }
+    applyCamTransform();
+  }
 
   // ======================================================
   //  Silnik przewijania
@@ -240,7 +273,7 @@
 
   $('againRec').addEventListener('click', () => { closeSheet(); restartScroll(); });
 
-  function setChromeHidden(hidden){ $('bar').classList.toggle('hidden', hidden); }
+  function setChromeHidden(hidden){ $('bar').classList.toggle('rec', hidden); $('recCaption').classList.toggle('show', hidden); }
 
   // ======================================================
   //  Bottom sheets
@@ -338,6 +371,14 @@
   bindRange('rPanel','panel','vPanel', v => v+'%');
   bindRange('rWidth','width','vWidth', v => v+'%');
   bindRange('rOpac','opac','vOpac', v => v+'%');
+  (function(){
+    const el = $('rZoom'), out = $('vZoom');
+    el.value = S.zoom; out.textContent = (+S.zoom).toFixed(1) + '×';
+    el.addEventListener('input', () => {
+      S.zoom = parseFloat(el.value); out.textContent = S.zoom.toFixed(1) + '×';
+      applyZoom(); saveSettings();
+    });
+  })();
 
   function bindToggle(id, key, onChange){
     const el = $(id);
@@ -348,7 +389,7 @@
     });
   }
   bindToggle('tCount','countdown');
-  bindToggle('tMirror','mirror', () => cam.classList.toggle('no-mirror', !(S.mirror && !S.back)));
+  bindToggle('tMirror','mirror', applyCamTransform);
   bindToggle('tBack','back', () => initCamera());
 
   // ======================================================

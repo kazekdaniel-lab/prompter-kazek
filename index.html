@@ -22,7 +22,7 @@
     --panel-op: 0.5;    /* krycie tła panelu */
     --text-w: 92;       /* % szerokości panelu */
     --font: 42px;
-    --reading: 0.22;    /* linia czytania: ułamek wysokości panelu */
+    --reading: 0.07;    /* linia czytania: przy samej górze, blisko obiektywu */
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; background:#000; overflow:hidden;
@@ -32,8 +32,7 @@
 
   /* ---- Kamera ---- */
   #cam{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#111;
-    transform:scaleX(-1); /* podgląd lustrzany; nagranie zostaje niezlustrzane */ }
-  #cam.no-mirror{ transform:none; }
+    transform-origin:center center; /* lustro + zoom ustawia JS przez style.transform */ }
   #camMsg{ position:absolute; inset:0; display:none; align-items:center; justify-content:center;
     text-align:center; padding:32px; color:#bbb; font-size:15px; line-height:1.5; z-index:5; }
   #camMsg.show{ display:flex; }
@@ -46,8 +45,8 @@
     -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
     border-radius:16px; margin:0 8px; overflow:hidden; touch-action:none; }
   #viewport{ position:absolute; inset:0; overflow:hidden;
-    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 9%,#000 88%,transparent 100%);
-    mask-image:linear-gradient(180deg,transparent 0,#000 9%,#000 88%,transparent 100%); }
+    -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 3%,#000 90%,transparent 100%);
+    mask-image:linear-gradient(180deg,transparent 0,#000 3%,#000 90%,transparent 100%); }
   #text{ position:absolute; left:50%; top:0; transform:translateX(-50%) translateY(0);
     width:calc(var(--text-w) * 1%); will-change:transform;
     font-size:var(--font); line-height:1.4; font-weight:700; text-align:center;
@@ -87,7 +86,7 @@
   /* ---- Dolny pasek ---- */
   #bar{ position:absolute; left:0; right:0; bottom:calc(var(--safe-b) + 14px); z-index:30;
     display:flex; align-items:center; justify-content:space-around; padding:0 16px; }
-  #bar.hidden{ display:none; }
+  #bar.rec .cbtn{ visibility:hidden; pointer-events:none; }
   .cbtn{ background:none; border:none; color:#fff; display:flex; flex-direction:column;
     align-items:center; gap:4px; font-size:11px; opacity:.92; width:56px; }
   .cbtn svg{ width:26px; height:26px; }
@@ -97,6 +96,10 @@
   #recBtn .inner{ width:56px; height:56px; border-radius:50%; background:var(--accent);
     transition:border-radius .15s, width .15s, height .15s; }
   #recBtn.recording .inner{ width:28px; height:28px; border-radius:7px; }
+  #recCaption{ position:absolute; left:0; right:0; bottom:calc(var(--safe-b) + 102px); z-index:31;
+    text-align:center; font-size:13px; font-weight:600; color:#fff; opacity:0; transition:opacity .2s;
+    pointer-events:none; text-shadow:0 1px 8px rgba(0,0,0,.9); }
+  #recCaption.show{ opacity:.92; }
 
   /* ---- Odliczanie ---- */
   #count{ position:absolute; inset:0; z-index:40; display:none; align-items:center;
@@ -226,6 +229,8 @@
     </button>
   </div>
 
+  <div id="recCaption">Tapnij czerwony kwadrat, żeby zatrzymać</div>
+
   <div id="count"><span id="countNum">3</span></div>
 
   <div id="install">
@@ -265,6 +270,8 @@
       <input type="range" id="rWidth" min="45" max="100" step="1"></div>
     <div class="row"><div class="head"><span>Krycie tła panelu</span><b id="vOpac">50%</b></div>
       <input type="range" id="rOpac" min="0" max="90" step="1"></div>
+    <div class="row"><div class="head"><span>Zoom kamery</span><b id="vZoom">1.0×</b></div>
+      <input type="range" id="rZoom" min="1" max="3" step="0.1"></div>
     <div class="toggle"><span>Odliczanie 3-2-1 przed nagraniem</span><div class="sw on" id="tCount"></div></div>
     <div class="toggle"><span>Lustrzany podgląd (nagranie zawsze normalne)</span><div class="sw on" id="tMirror"></div></div>
     <div class="toggle"><span>Kamera tylna (zamiast przedniej)</span><div class="sw" id="tBack"></div></div>
