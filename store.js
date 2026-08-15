@@ -233,6 +233,27 @@
     return sync();
   }
 
+  // ---------- skrzynka: skrypty dorzucane z repo ----------
+  /* inbox.json wchodzi do biblioteki raz na urządzenie (po id). Skasowany albo
+     zmieniony skrypt nie wraca przy kolejnym otwarciu. */
+  const INBOX_KEY = 'tp_inbox_seen_v1';
+  async function pullInbox(){
+    const res = await fetch('./inbox.json', { cache: 'no-store' });
+    if (!res.ok) return 0;
+    const doc = await res.json();
+    const items = Array.isArray(doc) ? doc : (doc && doc.scripts) || [];
+    const seen = readLS(INBOX_KEY, []);
+    let n = 0;
+    items.forEach(it => {
+      if (!it || !it.id || seen.indexOf(it.id) >= 0) return;
+      seen.push(it.id);
+      save({ id: it.id, name: it.name || 'Bez nazwy', text: it.text || '' });
+      n++;
+    });
+    if (n) writeLS(INBOX_KEY, seen);
+    return n;
+  }
+
   // ---------- import / eksport ----------
   function exportJSON(){ return JSON.stringify({ app: 'prompter', version: 2, exportedAt: new Date().toISOString(), scripts: all() }, null, 2); }
   function importJSON(text){
@@ -258,7 +279,7 @@
   global.TPStore = {
     all, get, raw, writeRaw, count, save, remove, duplicate, reorder, seedIfEmpty,
     lastId, setLastId, stats, ago, uid, who,
-    cloud, setCloud, clearCloud, connected, connect, sync, pairCode, applyPairCode,
+    cloud, setCloud, clearCloud, connected, connect, sync, pairCode, applyPairCode, pullInbox,
     exportJSON, importJSON, importPlain,
     TOKEN_URL: 'https://github.com/settings/tokens/new?scopes=gist&description=Prompter'
   };

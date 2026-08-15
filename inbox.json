@@ -1,0 +1,16 @@
+{
+  "app": "prompter",
+  "note": "Skrzynka: skrypty dorzucane z repo. Wchodzą do apki raz, przy pierwszym otwarciu po wypchnięciu zmiany. Potem są zwykłymi skryptami - można je edytować i kasować, nie wrócą.",
+  "scripts": [
+    {
+      "id": "velo1",
+      "name": "velo1 - dlaczego konkurent sprzedaje więcej",
+      "text": "Pssst… chcesz wiedzieć, dlaczego Twój konkurent sprzedaje ten sam produkt, co Ty, ale w większej ilości?\n\n(przebitka: dwie podobne oferty)\n\nNie, nie dlatego, że ma lepszy produkt.\nNie dlatego, że jest tańszy o 2 złote.\nI bardzo często nawet nie dlatego, że ma więcej opinii.\n\nProblem zaczyna się dużo wcześniej -  od tego, czy Allegro w ogóle chce pokazać jego ofertę klientowi.\n\nTytuł. Parametry. Trafność. Historia sprzedaży. Reklamy. Wszystko składa się na to, kto pojawi się na górze wyników wyszukiwania, a kto będzie na trzeciej stronie.\n\nI właśnie dlatego samo „wystawienie produktu” to zdecydowanie za mało.\n\nMy optymalizujemy konta Allegro tak, żeby produkty nie tylko były wystawione - ale żeby miały szansę być znalezione i kupione.\n\nPierwsze 30 dni prowadzimy konto za darmo.\n\nUmów się na darmową konsultację - formularz pod filmem."
+    },
+    {
+      "id": "velo2",
+      "name": "velo2 - klient porównuje w pierwszych sekundach",
+      "text": "Myślisz, że klient porównuje Twoją ofertę z trzema konkurentami?\n\nNajczęściej porównuje ją z tym, co widzi w pierwszych sekundach.\n\n(przebitka: wyszukiwanie produktu → 4 pierwsze oferty)\n\nZdjęcie.\nCena.\nDostawa.\nOpinie.\nTytuł.\nI klik.\n\nDlatego możesz mieć najlepszy produkt w swojej kategorii, ale jeśli oferta obok wygląda lepiej - klient może nawet nie dowiedzieć się, że istniejesz.\n\nMy analizujemy Twoją ofertę dokładnie z tej perspektywy.\n\nNie „czy jest poprawna”.\n\nTylko:\n„czy klient kliknie właśnie ją?”\n\nPierwsze 30 dni prowadzimy Twoje konto Allegro za darmo.\n\nUmów się na darmową konsultację."
+    }
+  ]
+}

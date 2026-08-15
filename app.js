@@ -657,6 +657,13 @@
   acquireWake();
   initCamera();
   updateCloudUI();
+  DB.pullInbox().then(n => {
+    if (!n) return;
+    if (!DB.get(currentId)){ const f = DB.all()[0]; currentId = f ? f.id : ''; DB.setLastId(currentId); renderText(); }
+    renderScriptList();
+    showToast(n === 1 ? 'Doszedł 1 nowy skrypt' : 'Doszły nowe skrypty: ' + n);
+    pushSoon();
+  }).catch(() => {});
   if (DB.connected()) cloudSync(false);
 
   if ('serviceWorker' in navigator){

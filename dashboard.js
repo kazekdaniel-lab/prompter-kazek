@@ -298,5 +298,11 @@
   const first = S.all()[0];
   if (first && window.innerWidth > 820) select(first.id);
   document.body.classList.remove('editing');
+  S.pullInbox().then(n => {
+    if (!n) return;
+    renderList();
+    toast(n === 1 ? 'Doszedł 1 nowy skrypt' : 'Doszły nowe skrypty: ' + n);
+    schedulePush();
+  }).catch(() => {});
   if (S.connected()) syncNow(false);
 })();
