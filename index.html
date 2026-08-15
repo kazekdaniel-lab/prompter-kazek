@@ -174,6 +174,9 @@
   .syncrow span{ flex:1; }
   .sect{ font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:#8a8a8a;
     margin:26px 0 10px; font-weight:700; }
+  .mailrow{ display:flex; flex-direction:column; gap:8px; }
+  .mailrow .btn{ text-align:left; font-size:15px; font-weight:600; }
+  details summary::-webkit-details-marker{ color:#666; }
 
   /* review */
   #reviewVid{ width:100%; border-radius:14px; background:#000; max-height:52dvh; margin-bottom:14px; }
@@ -291,15 +294,33 @@
     <div class="toggle"><span>Kamera tylna (zamiast przedniej)</span><div class="sw" id="tBack"></div></div>
     <p class="hint">Tekst jest tylko na ekranie - w nagraniu go nie ma. Nagrywa się sam obraz z kamery i dźwięk, wszystko zostaje na telefonie.</p>
 
-    <div class="sect">Chmura ze skryptami</div>
-    <p class="hint" id="cloudStatus" style="margin-bottom:12px;">Nie połączono. Skrypty są tylko na tym telefonie.</p>
-    <input type="text" id="cloudInput" placeholder="Wklej tu kod PRM1..." autocomplete="off" spellcheck="false" style="display:none;">
-    <div class="editrow">
-      <button class="btn" id="cloudPaste">Połącz kodem</button>
-      <button class="btn" id="cloudSync">Synchronizuj</button>
+    <div class="sect">Konto</div>
+    <p class="hint" id="cloudStatus" style="margin-bottom:12px;">Nie zalogowano. Skrypty są tylko na tym telefonie.</p>
+
+    <div id="loginBlock">
+      <div class="mailrow" id="mailRow"></div>
+      <input type="text" id="codeInput" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+             placeholder="Kod z maila (6 cyfr)" style="display:none; text-align:center; letter-spacing:.4em; font-size:20px;">
+      <div class="editrow" id="codeRow" style="display:none;">
+        <button class="btn ghost" id="codeAgain">Wyślij ponownie</button>
+        <button class="btn primary" id="codeGo">Zaloguj</button>
+      </div>
     </div>
-    <button class="btn ghost" id="cloudOff" style="margin-top:10px; display:none;">Odłącz od chmury</button>
-    <p class="hint">Kod parowania generuje <a href="./dashboard.html">dashboard</a> - otwórz go na komputerze, kliknij „Chmura”, skopiuj kod i wklej tutaj. Wtedy skrypty z komputera pojawiają się na telefonie, a to, co dopiszesz w telefonie, wraca na komputer.</p>
+
+    <div class="editrow" id="accountRow" style="display:none;">
+      <button class="btn" id="cloudSync">Synchronizuj</button>
+      <button class="btn ghost" id="signOut">Wyloguj</button>
+    </div>
+
+    <details style="margin-top:16px;">
+      <summary class="hint" style="cursor:pointer;">Bez konta: parowanie kodem z dashboardu</summary>
+      <input type="text" id="cloudInput" placeholder="Wklej tu kod PRM1..." autocomplete="off" spellcheck="false" style="display:none; margin-top:10px;">
+      <div class="editrow">
+        <button class="btn" id="cloudPaste">Połącz kodem</button>
+        <button class="btn ghost" id="cloudOff" style="display:none;">Odłącz</button>
+      </div>
+      <p class="hint">Zapasowa droga, gdy nie chcesz logowania mailem: kod parowania generuje <a href="./dashboard.html">dashboard</a> na komputerze.</p>
+    </details>
   </div>
 
   <!-- Sheet: podgląd nagrania -->
@@ -315,6 +336,8 @@
   <div id="backdrop"></div>
 </div>
 
+<script src="./config.js"></script>
+<script src="./auth.js"></script>
 <script src="./store.js"></script>
 <script src="./app.js"></script>
 </body>

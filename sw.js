@@ -1,13 +1,15 @@
 /* Prompter service worker.
    Sieć-najpierw z krótkim limitem czasu (żeby aktualizacje wchodziły od razu),
    cache jako zapas - po pierwszym otwarciu apka działa offline. */
-const CACHE = 'tp-shell-v3';
+const CACHE = 'tp-shell-v4';
 const TIMEOUT = 2500;
 const ASSETS = [
   './',
   './index.html',
   './app.js',
   './store.js',
+  './auth.js',
+  './config.js',
   './dashboard.html',
   './dashboard.js',
   './manifest.webmanifest',

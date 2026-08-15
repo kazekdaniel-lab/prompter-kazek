@@ -356,23 +356,82 @@
   // ======================================================
   //  Chmura (wspólna baza z komputerem)
   // ======================================================
+  const A = window.TPAuth;
   const syncRow = $('syncRow'), syncTxt = $('syncTxt'), cloudStatus = $('cloudStatus'),
-        cloudInput = $('cloudInput'), cloudOff = $('cloudOff');
-  let syncing = false, pushT = null;
+        cloudInput = $('cloudInput'), cloudOff = $('cloudOff'),
+        mailRow = $('mailRow'), codeInput = $('codeInput'), codeRow = $('codeRow'),
+        loginBlock = $('loginBlock'), accountRow = $('accountRow');
+  let syncing = false, pushT = null, loginMail = '';
 
   function updateCloudUI(msg, state){
-    const c = DB.cloud(), on = DB.connected();
+    const c = DB.cloud(), b = DB.backend(), on = !!b;
     syncRow.className = 'syncrow' + (state ? ' ' + state : (on ? ' on' : ''));
     syncTxt.textContent = msg || (on ? 'Chmura · ' + DB.ago(c.lastSync) : 'Tylko na tym telefonie');
-    cloudStatus.textContent = on
-      ? 'Połączono' + (c.user ? ' jako ' + c.user : '') + '. Ostatnia synchronizacja: ' + DB.ago(c.lastSync) + '.'
-      : 'Nie połączono. Skrypty są tylko na tym telefonie.';
-    cloudOff.style.display = on ? 'block' : 'none';
-    $('cloudPaste').textContent = on ? 'Wklej inny kod' : 'Połącz kodem';
+
+    if (b === 'account'){
+      cloudStatus.textContent = 'Zalogowany jako ' + A.email() + '. Sesja ważna jeszcze ' + A.daysLeft() +
+        ' dni. Ostatnia synchronizacja: ' + DB.ago(c.lastSync) + '.';
+    } else if (b === 'gist'){
+      cloudStatus.textContent = 'Połączono kodem parowania' + (c.user ? ' (' + c.user + ')' : '') +
+        '. Ostatnia synchronizacja: ' + DB.ago(c.lastSync) + '.';
+    } else {
+      cloudStatus.textContent = A.configured()
+        ? 'Nie zalogowano. Skrypty są tylko na tym telefonie.'
+        : 'Logowanie mailem nie jest jeszcze skonfigurowane. Możesz połączyć telefon kodem parowania (niżej).';
+    }
+    loginBlock.style.display = (A.configured() && b !== 'account') ? 'block' : 'none';
+    accountRow.style.display = on ? 'flex' : 'none';
+    $('signOut').style.display = (b === 'account') ? 'block' : 'none';
+    cloudOff.style.display = (b === 'gist') ? 'block' : 'none';
+    renderMailButtons();
   }
 
+  function renderMailButtons(){
+    if (!A.configured() || mailRow.dataset.done) return;
+    mailRow.dataset.done = '1';
+    A.allowed().forEach(m => {
+      const b = document.createElement('button');
+      b.className = 'btn'; b.textContent = m;
+      b.addEventListener('click', () => sendCode(m));
+      mailRow.appendChild(b);
+    });
+  }
+
+  async function sendCode(mail){
+    try{
+      updateCloudUI('Wysyłam kod...', 'on');
+      loginMail = await A.requestCode(mail);
+      codeInput.style.display = 'block'; codeRow.style.display = 'flex';
+      codeInput.focus();
+      showToast('Kod poleciał na ' + loginMail);
+      updateCloudUI();
+    }catch(err){ updateCloudUI(); showToast(err.message.slice(0, 70)); }
+  }
+  async function verifyCode(){
+    try{
+      await A.verifyCode(loginMail || A.lastMail(), codeInput.value);
+      codeInput.value = ''; codeInput.style.display = 'none'; codeRow.style.display = 'none';
+      showToast('Zalogowano');
+      await cloudSync(true);
+      updateCloudUI();
+    }catch(err){ showToast(err.message.slice(0, 70)); }
+  }
+  $('codeGo').addEventListener('click', verifyCode);
+  codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); verifyCode(); } });
+  $('codeAgain').addEventListener('click', () => sendCode(loginMail || A.lastMail()));
+  $('signOut').addEventListener('click', () => {
+    if (!confirm('Wylogować się? Skrypty zostaną na telefonie.')) return;
+    A.signOut(); updateCloudUI(); showToast('Wylogowano');
+  });
+
   async function cloudSync(loud){
-    if (!DB.connected()){ if (loud){ showToast('Najpierw połącz kodem z dashboardu'); openSheet('settingsSheet'); } return; }
+    if (!DB.connected()){
+      if (loud){
+        showToast(A.configured() ? 'Najpierw zaloguj się mailem' : 'Najpierw połącz kodem z dashboardu');
+        openSheet('settingsSheet');
+      }
+      return;
+    }
     if (syncing) return;
     syncing = true;
     updateCloudUI('Synchronizuję...', 'on');
@@ -513,6 +572,7 @@
   rafId = requestAnimationFrame(tick);
   acquireWake();
   initCamera();
+  A.consumeHash();                 // powrót z linku klikniętego w mailu
   updateCloudUI();
   if (DB.connected()) cloudSync(false);
 

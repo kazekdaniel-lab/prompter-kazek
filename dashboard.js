@@ -182,12 +182,82 @@
     document.body.appendChild(a); a.click(); a.remove();
   });
 
+  // ---------- logowanie mailem ----------
+  const A = window.TPAuth;
+  const loginEl = $('login'), loginBox = $('loginBox');
+  let loginMail = '';
+
+  function needLogin(){ return A.configured() && !A.ready(); }
+
+  function showLogin(step){
+    loginEl.classList.add('show');
+    loginBox.innerHTML = step === 'code' ? loginCodeHTML() : loginMailHTML();
+    if (step === 'code'){
+      $('code').focus();
+      $('doVerify').addEventListener('click', doVerify);
+      $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') doVerify(); });
+      $('again').addEventListener('click', () => sendCode(loginMail, true));
+      $('backMail').addEventListener('click', () => showLogin('mail'));
+    } else {
+      loginBox.querySelectorAll('.mailbtn').forEach(b =>
+        b.addEventListener('click', () => sendCode(b.dataset.mail)));
+      const other = $('otherMail');
+      if (other) other.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendCode(other.value); });
+    }
+  }
+  function loginMailHTML(){
+    const mails = A.allowed();
+    return `
+      <div class="brand"><b>PROMPT<span>ER</span></b> · logowanie</div>
+      <h3>Zaloguj się mailem</h3>
+      <p>Wyślemy 6-cyfrowy kod (i link) na wybrany adres. Sesja trzyma ${A.sessionDays()} dni, potem logujesz się jeszcze raz.</p>
+      ${mails.map(m => `<button class="mailbtn" data-mail="${m}">${m}</button>`).join('')}
+      ${mails.length ? '' : '<input type="text" id="otherMail" placeholder="twój@email.pl">'}`;
+  }
+  function loginCodeHTML(){
+    return `
+      <div class="brand"><b>PROMPT<span>ER</span></b> · logowanie</div>
+      <h3>Kod z maila</h3>
+      <p>Wysłaliśmy kod na <b>${loginMail}</b>. Wpisz 6 cyfr albo po prostu kliknij link w mailu na tym urządzeniu.</p>
+      <input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
+      <div class="row">
+        <button class="btn primary" id="doVerify">Zaloguj</button>
+        <button class="btn" id="again">Wyślij ponownie</button>
+        <button class="btn ghost" id="backMail">Inny adres</button>
+      </div>`;
+  }
+  async function sendCode(mail, quiet){
+    try{
+      loginMail = await A.requestCode(mail);
+      showLogin('code');
+      if (!quiet) toast('Kod poleciał na ' + loginMail);
+      else toast('Wysłano nowy kod');
+    }catch(err){ toast(err.message, true); }
+  }
+  async function doVerify(){
+    const btn = $('doVerify');
+    btn.disabled = true; btn.textContent = 'Sprawdzam...';
+    try{
+      await A.verifyCode(loginMail, $('code').value);
+      loginEl.classList.remove('show');
+      toast('Zalogowano');
+      renderList(); refreshChip();
+      syncNow(true);
+    }catch(err){
+      toast(err.message, true);
+      btn.disabled = false; btn.textContent = 'Zaloguj';
+    }
+  }
+
   // ---------- chmura ----------
   function refreshChip(){
-    const c = S.cloud();
-    if (S.connected()){
+    const c = S.cloud(), b = S.backend();
+    if (b === 'account'){
       chip.className = 'chip on';
-      chipTxt.textContent = 'Chmura: ' + (c.user ? c.user + ' · ' : '') + S.ago(c.lastSync);
+      chipTxt.textContent = A.email() + ' · ' + A.daysLeft() + ' dni';
+    } else if (b === 'gist'){
+      chip.className = 'chip on';
+      chipTxt.textContent = 'Gist: ' + (c.user ? c.user + ' · ' : '') + S.ago(c.lastSync);
     } else {
       chip.className = 'chip';
       chipTxt.textContent = 'Tylko lokalnie';
@@ -215,6 +285,7 @@
     }catch(err){
       chip.className = 'chip err'; chipTxt.textContent = 'Błąd synchronizacji';
       toast(err.message, true);
+      if (needLogin()) showLogin('mail');      // sesja wygasła po 30 dniach
     }finally{ syncing = false; }
   }
   $('btnSync').addEventListener('click', () => syncNow(true));
@@ -224,8 +295,25 @@
   ov.addEventListener('click', (e) => { if (e.target === ov) ov.classList.remove('show'); });
 
   function openCloud(){
+    if (S.backend() === 'account'){
+      modal.innerHTML = accountHTML();
+      ov.classList.add('show');
+      $('aSync').addEventListener('click', () => { ov.classList.remove('show'); syncNow(true); });
+      $('aOut').addEventListener('click', () => {
+        if (!confirm('Wylogować się? Skrypty zostają na tym urządzeniu.')) return;
+        A.signOut(); ov.classList.remove('show'); refreshChip(); showLogin('mail');
+      });
+      return;
+    }
     modal.innerHTML = S.connected() ? connectedHTML() : setupHTML();
     ov.classList.add('show');
+    if (A.configured() && !S.connected()){
+      const b = document.createElement('button');
+      b.className = 'btn primary'; b.textContent = 'Zaloguj mailem';
+      b.style.marginTop = '14px'; b.style.width = '100%';
+      b.addEventListener('click', () => { ov.classList.remove('show'); showLogin('mail'); });
+      modal.insertBefore(b, modal.firstChild.nextSibling);
+    }
     if (S.connected()){
       $('mCopy').addEventListener('click', async () => {
         const code = S.pairCode();
@@ -256,6 +344,20 @@
       });
       $('mToken').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('mConnect').click(); });
     }
+  }
+
+  function accountHTML(){
+    const c = S.cloud();
+    return `
+      <h3>Konto</h3>
+      <p>Zalogowany jako <b>${A.email()}</b>.<br>
+         Sesja ważna jeszcze <b>${A.daysLeft()} dni</b> - potem logujesz się mailem od nowa.<br>
+         Ostatnia synchronizacja: <b>${S.ago(c.lastSync)}</b>.</p>
+      <p>Skrypty leżą w bazie Supabase, tej samej dla komputera i telefonu. Na telefonie zaloguj się tym samym adresem.</p>
+      <div class="row">
+        <button class="btn primary" id="aSync">Synchronizuj teraz</button>
+        <button class="btn ghost" id="aOut">Wyloguj</button>
+      </div>`;
   }
 
   function setupHTML(){
@@ -293,10 +395,12 @@
     if (document.visibilityState === 'visible' && S.connected() && Date.now() - (S.cloud().lastSync || 0) > 20000) syncNow(false);
   });
 
+  A.consumeHash();                 // powrót z linku w mailu
   renderList();
   refreshChip();
   const first = S.all()[0];
   if (first && window.innerWidth > 820) select(first.id);
   document.body.classList.remove('editing');
-  if (S.connected()) syncNow(false);
+  if (needLogin()) showLogin('mail');
+  else if (S.connected()) syncNow(false);
 })();

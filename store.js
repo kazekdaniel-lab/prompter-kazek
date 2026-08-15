@@ -112,11 +112,23 @@
              time: Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') };
   }
 
-  // ---------- chmura (prywatny Gist) ----------
+  // ---------- chmura: konto mailowe (Supabase) albo prywatny Gist ----------
   function cloud(){ return readLS(CLOUD_KEY, { token: '', gistId: '', lastSync: 0, user: '' }); }
   function setCloud(patch){ const c = Object.assign(cloud(), patch); writeLS(CLOUD_KEY, c); return c; }
   function clearCloud(){ try{ localStorage.removeItem(CLOUD_KEY); }catch(e){} }
-  function connected(){ const c = cloud(); return !!(c.token && c.gistId); }
+
+  const A = () => global.TPAuth;
+  function backend(){
+    if (A() && A().ready()) return 'account';
+    const c = cloud();
+    if (c.token && c.gistId) return 'gist';
+    return null;
+  }
+  function connected(){ return backend() !== null; }
+  function who(){
+    if (backend() === 'account') return A().email();
+    return cloud().user || '';
+  }
 
   async function api(path, opts, token){
     const t = token || cloud().token;
@@ -180,10 +192,64 @@
     return list.filter(s => !(s.deleted && (s.updatedAt || 0) < cut));
   }
 
+  // ---------- backend: konto mailowe (tabela scripts w Supabase) ----------
+  const COLS = 'id,name,body,pos,updated_at,deleted';
+  const fromRow = (r) => norm({ id: r.id, name: r.name, text: r.body, order: r.pos,
+                                updatedAt: Number(r.updated_at) || 0, deleted: !!r.deleted });
+  const toRow = (s) => ({ id: s.id, name: s.name, body: s.text, pos: s.order,
+                          updated_at: s.updatedAt, deleted: s.deleted });
+
+  async function rest(path, opts){
+    const tok = await A().token();
+    if (!tok) throw new Error('Sesja wygasła - zaloguj się ponownie');
+    const res = await fetch(A().url() + '/rest/v1' + path, Object.assign({ cache: 'no-store' }, opts, {
+      headers: Object.assign({
+        'apikey': A().key(),
+        'Authorization': 'Bearer ' + tok,
+        'Content-Type': 'application/json'
+      }, (opts && opts.headers) || {})
+    }));
+    if (res.status === 401 || res.status === 403)
+      throw new Error('Brak dostępu do bazy - sprawdź, czy Twój adres jest na liście w supabase.sql');
+    if (!res.ok){
+      const t = await res.text().catch(() => '');
+      if (t.includes('does not exist') || res.status === 404)
+        throw new Error('Brak tabeli "scripts" - uruchom supabase.sql w SQL Editorze');
+      throw new Error('Baza ' + res.status + ': ' + t.slice(0, 140));
+    }
+    const txt = await res.text();
+    return txt ? JSON.parse(txt) : null;
+  }
+
+  async function syncAccount(){
+    const rows = await rest('/scripts?select=' + COLS, { method: 'GET' });
+    const remote = (rows || []).map(fromRow);
+    const merged = gc(merge(raw(), remote));
+    writeRaw(merged);
+    const rmap = new Map(remote.map(s => [s.id, s]));
+    const changed = merged.filter(s => {
+      const r = rmap.get(s.id);
+      return !r || JSON.stringify(strip(r)) !== JSON.stringify(strip(s));
+    });
+    if (changed.length){
+      await rest('/scripts', {
+        method: 'POST',
+        headers: { 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(changed.map(toRow))
+      });
+    }
+    setCloud({ lastSync: now() });
+    return { pushed: changed.length > 0, remote: remote.length, total: merged.filter(s => !s.deleted).length };
+  }
+
   let inFlight = null;
   /* Pełna synchronizacja: pobierz -> scal -> zapisz lokalnie -> odeślij, jeśli coś się zmieniło. */
   function sync(){
     if (inFlight) return inFlight;
+    if (backend() === 'account'){
+      inFlight = syncAccount().finally(() => { inFlight = null; });
+      return inFlight;
+    }
     inFlight = (async () => {
       const c = cloud();
       if (!c.token || !c.gistId) throw new Error('Chmura nie jest połączona');
@@ -255,7 +321,7 @@
 
   global.TPStore = {
     all, get, raw, writeRaw, count, save, remove, duplicate, reorder, seedIfEmpty,
-    lastId, setLastId, stats, ago, uid,
+    lastId, setLastId, stats, ago, uid, backend, who,
     cloud, setCloud, clearCloud, connected, connect, sync, pairCode, applyPairCode,
     exportJSON, importJSON, importPlain,
     TOKEN_URL: 'https://github.com/settings/tokens/new?scopes=gist&description=Prompter'
