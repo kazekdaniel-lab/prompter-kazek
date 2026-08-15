@@ -22,21 +22,13 @@
   function save(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
   const saveSettings = () => save(SET_KEY, S);
 
-  // ---- Skrypty (localStorage) ----
-  const SCR_KEY = 'tp_scripts_v1', LAST_KEY = 'tp_last_v1';
-  let scripts = load2(SCR_KEY, null);
-  if (!Array.isArray(scripts) || !scripts.length){
-    scripts = [{ id: uid(), name:'Przykład', text:
-      'To jest Twój teleprompter.\n\nWklej tu swój tekst, ustaw prędkość suwakiem i tapnij czerwony przycisk, żeby nagrać.\n\nPatrz w obiektyw u góry - tekst przewija się tuż obok, więc na nagraniu wygląda, jakbyś mówił prosto do kamery.' }];
-    save(SCR_KEY, scripts);
-  }
-  let currentId = localStorage.getItem(LAST_KEY) || scripts[0].id;
-  if (!scripts.some(s => s.id === currentId)) currentId = scripts[0].id;
-
-  function load2(key){ try{ return JSON.parse(localStorage.getItem(key)); }catch(e){ return null; } }
-  function saveScripts(){ save(SCR_KEY, scripts); }
-  function uid(){ return 's' + Math.abs((Date.now() ^ (performance.now()*1000|0))).toString(36) + (scripts?scripts.length:0); }
-  function currentScript(){ return scripts.find(s => s.id === currentId) || scripts[0]; }
+  // ---- Skrypty (wspólna baza TPStore, ta sama co w dashboardzie) ----
+  const DB = window.TPStore;
+  DB.seedIfEmpty();
+  let currentId = DB.lastId();
+  if (!DB.get(currentId)){ const f = DB.all()[0]; currentId = f ? f.id : ''; DB.setLastId(currentId); }
+  function currentScript(){ return DB.get(currentId); }
+  const EMPTY_TEXT = 'Brak skryptów.\n\nTapnij „Skrypty” na dole i dodaj pierwszy - albo wgraj je z komputera w dashboardzie i połącz telefon kodem parowania.';
 
   // ---- Toast ----
   let toastT;
@@ -117,7 +109,8 @@
   let playing = false, scrollPos = 0, lastT = 0, rafId = null, maxScroll = 0;
 
   function renderText(){
-    textEl.textContent = currentScript().text || '';
+    const s = currentScript();
+    textEl.textContent = s ? (s.text || '') : EMPTY_TEXT;
     requestAnimationFrame(relayout);
   }
   function relayout(){
@@ -296,12 +289,22 @@
 
   function renderScriptList(){
     scriptList.innerHTML = '';
-    scripts.forEach(s => {
+    const items = DB.all();
+    if (!items.length){
+      const e = document.createElement('p');
+      e.className = 'hint';
+      e.style.textAlign = 'center';
+      e.textContent = 'Brak skryptów. Dodaj pierwszy poniżej.';
+      scriptList.appendChild(e);
+      return;
+    }
+    items.forEach(s => {
       const div = document.createElement('div');
       div.className = 'sitem' + (s.id === currentId ? ' active' : '');
-      const preview = (s.text||'').replace(/\s+/g,' ').slice(0,42);
+      const st = DB.stats(s.text);
+      const preview = (s.text||'').replace(/\s+/g,' ').slice(0,38);
       const nm = document.createElement('div'); nm.className='nm';
-      nm.innerHTML = `${esc(s.name||'Bez nazwy')}<div class="pv">${esc(preview)||'&nbsp;'}</div>`;
+      nm.innerHTML = `${esc(s.name||'Bez nazwy')}<div class="pv">${esc(preview)||'(pusty)'} · ~${st.time}</div>`;
       nm.addEventListener('click', () => { selectScript(s.id); closeSheet(); });
       const eBtn = document.createElement('button'); eBtn.className='iconbtn'; eBtn.textContent='✎';
       eBtn.addEventListener('click', () => showEditor(s.id));
@@ -313,11 +316,11 @@
   }
   function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-  function selectScript(id){ currentId = id; localStorage.setItem(LAST_KEY, id); renderText(); restartScroll(); setPlaying(false); }
+  function selectScript(id){ currentId = id; DB.setLastId(id); renderText(); restartScroll(); setPlaying(false); }
 
   function showEditor(id){
     editingId = id;
-    const s = id ? scripts.find(x=>x.id===id) : null;
+    const s = id ? DB.get(id) : null;
     nameInput.value = s ? s.name : '';
     textInput.value = s ? s.text : '';
     editor.style.display = 'block';
@@ -329,21 +332,101 @@
 
   $('saveScript').addEventListener('click', () => {
     const name = nameInput.value.trim() || 'Bez nazwy';
-    const text = textInput.value;
-    if (editingId){ const s = scripts.find(x=>x.id===editingId); if(s){ s.name=name; s.text=text; } }
-    else { const id = uid(); scripts.push({ id, name, text }); currentId = id; localStorage.setItem(LAST_KEY, id); }
-    saveScripts(); hideEditor(); renderScriptList();
-    if (!editingId || editingId === currentId) renderText();
+    const id = DB.save({ id: editingId, name, text: textInput.value });
+    if (!editingId){ currentId = id; DB.setLastId(id); }
+    hideEditor(); renderScriptList();
+    if (id === currentId) renderText();
     showToast('Zapisano');
+    pushSoon();
   });
 
   function deleteScript(id){
-    if (scripts.length <= 1){ showToast('Musi zostać co najmniej 1 skrypt'); return; }
     if (!confirm('Usunąć ten skrypt?')) return;
-    scripts = scripts.filter(s => s.id !== id);
-    if (currentId === id){ currentId = scripts[0].id; localStorage.setItem(LAST_KEY, currentId); renderText(); }
-    saveScripts(); renderScriptList();
+    DB.remove(id);
+    if (currentId === id){
+      const f = DB.all()[0];
+      currentId = f ? f.id : '';
+      DB.setLastId(currentId);
+      renderText();
+    }
+    renderScriptList();
+    pushSoon();
   }
+
+  // ======================================================
+  //  Chmura (wspólna baza z komputerem)
+  // ======================================================
+  const syncRow = $('syncRow'), syncTxt = $('syncTxt'), cloudStatus = $('cloudStatus'),
+        cloudInput = $('cloudInput'), cloudOff = $('cloudOff');
+  let syncing = false, pushT = null;
+
+  function updateCloudUI(msg, state){
+    const c = DB.cloud(), on = DB.connected();
+    syncRow.className = 'syncrow' + (state ? ' ' + state : (on ? ' on' : ''));
+    syncTxt.textContent = msg || (on ? 'Chmura · ' + DB.ago(c.lastSync) : 'Tylko na tym telefonie');
+    cloudStatus.textContent = on
+      ? 'Połączono' + (c.user ? ' jako ' + c.user : '') + '. Ostatnia synchronizacja: ' + DB.ago(c.lastSync) + '.'
+      : 'Nie połączono. Skrypty są tylko na tym telefonie.';
+    cloudOff.style.display = on ? 'block' : 'none';
+    $('cloudPaste').textContent = on ? 'Wklej inny kod' : 'Połącz kodem';
+  }
+
+  async function cloudSync(loud){
+    if (!DB.connected()){ if (loud){ showToast('Najpierw połącz kodem z dashboardu'); openSheet('settingsSheet'); } return; }
+    if (syncing) return;
+    syncing = true;
+    updateCloudUI('Synchronizuję...', 'on');
+    try{
+      const r = await DB.sync();
+      if (!DB.get(currentId)){ const f = DB.all()[0]; currentId = f ? f.id : ''; DB.setLastId(currentId); renderText(); }
+      else renderText();
+      renderScriptList();
+      updateCloudUI();
+      if (loud) showToast('Zsynchronizowano · skryptów: ' + r.total);
+    }catch(err){
+      updateCloudUI('Błąd: ' + err.message.slice(0, 40), 'err');
+      if (loud) showToast(err.message.slice(0, 60));
+    }finally{ syncing = false; }
+  }
+  function pushSoon(){
+    updateCloudUI();
+    if (!DB.connected()) return;
+    clearTimeout(pushT);
+    pushT = setTimeout(() => cloudSync(false), 1500);
+  }
+
+  $('syncBtn').addEventListener('click', () => cloudSync(true));
+  $('cloudSync').addEventListener('click', () => cloudSync(true));
+
+  $('cloudPaste').addEventListener('click', async () => {
+    let code = '';
+    try{ code = await navigator.clipboard.readText(); }catch(e){}
+    if (code && code.trim().startsWith('PRM1.')) return applyCode(code);
+    cloudInput.style.display = 'block';
+    cloudInput.focus();
+    showToast('Wklej kod w pole powyżej');
+  });
+  cloudInput.addEventListener('change', () => applyCode(cloudInput.value));
+  cloudInput.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); applyCode(cloudInput.value); } });
+
+  async function applyCode(code){
+    try{
+      updateCloudUI('Łączę...', 'on');
+      await DB.applyPairCode(code);
+      cloudInput.value = ''; cloudInput.style.display = 'none';
+      if (!DB.get(currentId)){ const f = DB.all()[0]; currentId = f ? f.id : ''; DB.setLastId(currentId); }
+      renderText(); renderScriptList(); updateCloudUI();
+      showToast('Połączono z chmurą');
+    }catch(err){
+      updateCloudUI('Błąd połączenia', 'err');
+      showToast(err.message.slice(0, 70));
+    }
+  }
+
+  cloudOff.addEventListener('click', () => {
+    if (!confirm('Odłączyć telefon od chmury? Skrypty zostaną na telefonie.')) return;
+    DB.clearCloud(); updateCloudUI(); showToast('Odłączono');
+  });
 
   // ======================================================
   //  Ustawienia (suwaki + przełączniki)
@@ -399,7 +482,11 @@
   async function acquireWake(){
     try{ if ('wakeLock' in navigator){ wl = await navigator.wakeLock.request('screen'); } }catch(e){}
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') acquireWake(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    acquireWake();
+    if (!recording && DB.connected() && Date.now() - (DB.cloud().lastSync || 0) > 20000) cloudSync(false);
+  });
 
   // ======================================================
   //  Instrukcja "Dodaj do ekranu głównego" (iOS Safari)
@@ -426,6 +513,8 @@
   rafId = requestAnimationFrame(tick);
   acquireWake();
   initCamera();
+  updateCloudUI();
+  if (DB.connected()) cloudSync(false);
 
   if ('serviceWorker' in navigator){
     window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));

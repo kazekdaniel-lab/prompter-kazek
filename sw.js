@@ -1,9 +1,15 @@
-/* Prompter service worker - cache-first shell, działa offline po pierwszym otwarciu. */
-const CACHE = 'tp-shell-v2';
+/* Prompter service worker.
+   Sieć-najpierw z krótkim limitem czasu (żeby aktualizacje wchodziły od razu),
+   cache jako zapas - po pierwszym otwarciu apka działa offline. */
+const CACHE = 'tp-shell-v3';
+const TIMEOUT = 2500;
 const ASSETS = [
   './',
   './index.html',
   './app.js',
+  './store.js',
+  './dashboard.html',
+  './dashboard.js',
   './manifest.webmanifest',
   './icon-180.png',
   './icon-512.png'
@@ -27,17 +33,26 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== location.origin) return; // nie cache'uj obcych hostów
-  e.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req).then((res) => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-        }
-        return res;
-      }).catch(() => cached || caches.match('./index.html'));
-      return cached || network;
-    })
-  );
+  if (url.origin !== location.origin) return; // GitHub API i reszta - prosto do sieci
+
+  e.respondWith((async () => {
+    const cached = await caches.match(req);
+    try {
+      const res = await withTimeout(fetch(req), TIMEOUT);
+      if (res && res.status === 200 && res.type === 'basic') {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy));
+      }
+      return res;
+    } catch (err) {
+      return cached || caches.match('./index.html');
+    }
+  })());
 });
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms);
+    promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}

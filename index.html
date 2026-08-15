@@ -163,6 +163,17 @@
   .editrow{ display:flex; gap:10px; margin-top:12px; }
   .editrow .btn{ flex:1; }
   .hint{ font-size:12.5px; color:#7d7d7d; line-height:1.5; margin-top:6px; }
+  .hint a{ color:#7fb2ff; }
+
+  /* chmura */
+  .syncrow{ display:flex; align-items:center; gap:10px; background:#1c1c1c; border-radius:12px;
+    padding:11px 13px; margin-bottom:12px; font-size:13px; color:#9a9a9a; }
+  .syncrow .dot{ width:8px; height:8px; border-radius:50%; background:#666; flex:none; }
+  .syncrow.on .dot{ background:#34c759; }
+  .syncrow.err .dot{ background:var(--accent); }
+  .syncrow span{ flex:1; }
+  .sect{ font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:#8a8a8a;
+    margin:26px 0 10px; font-weight:700; }
 
   /* review */
   #reviewVid{ width:100%; border-radius:14px; background:#000; max-height:52dvh; margin-bottom:14px; }
@@ -244,8 +255,11 @@
   <div class="sheet" id="scriptsSheet">
     <div class="grab"></div>
     <h2>Skrypty <button class="x" data-close>Gotowe</button></h2>
+    <div class="syncrow" id="syncRow"><i class="dot"></i><span id="syncTxt">Tylko na tym telefonie</span>
+      <button class="iconbtn" id="syncBtn" aria-label="Synchronizuj">⟳</button></div>
     <div class="slist" id="scriptList"></div>
     <button class="btn" id="newScript">＋ Nowy skrypt</button>
+    <p class="hint" style="text-align:center;"><a href="./dashboard.html">Zarządzaj skryptami w dashboardzie ↗</a></p>
     <div id="editor" style="display:none; margin-top:18px;">
       <input type="text" id="scriptName" placeholder="Nazwa (np. Intro, Oferta, Outro)">
       <textarea id="scriptText" placeholder="Wklej albo napisz tekst do przeczytania..."></textarea>
@@ -276,6 +290,16 @@
     <div class="toggle"><span>Lustrzany podgląd (nagranie zawsze normalne)</span><div class="sw on" id="tMirror"></div></div>
     <div class="toggle"><span>Kamera tylna (zamiast przedniej)</span><div class="sw" id="tBack"></div></div>
     <p class="hint">Tekst jest tylko na ekranie - w nagraniu go nie ma. Nagrywa się sam obraz z kamery i dźwięk, wszystko zostaje na telefonie.</p>
+
+    <div class="sect">Chmura ze skryptami</div>
+    <p class="hint" id="cloudStatus" style="margin-bottom:12px;">Nie połączono. Skrypty są tylko na tym telefonie.</p>
+    <input type="text" id="cloudInput" placeholder="Wklej tu kod PRM1..." autocomplete="off" spellcheck="false" style="display:none;">
+    <div class="editrow">
+      <button class="btn" id="cloudPaste">Połącz kodem</button>
+      <button class="btn" id="cloudSync">Synchronizuj</button>
+    </div>
+    <button class="btn ghost" id="cloudOff" style="margin-top:10px; display:none;">Odłącz od chmury</button>
+    <p class="hint">Kod parowania generuje <a href="./dashboard.html">dashboard</a> - otwórz go na komputerze, kliknij „Chmura”, skopiuj kod i wklej tutaj. Wtedy skrypty z komputera pojawiają się na telefonie, a to, co dopiszesz w telefonie, wraca na komputer.</p>
   </div>
 
   <!-- Sheet: podgląd nagrania -->
@@ -291,6 +315,7 @@
   <div id="backdrop"></div>
 </div>
 
+<script src="./store.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>
