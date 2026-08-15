@@ -15,7 +15,8 @@
 
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
-  const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, countdown:true, mirror:true, back:false };
+  const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, countdown:true, mirror:true, back:false,
+                     res:'max', fps:30, vbr:0, micId:'', raw:false };
   let S = load(SET_KEY, defaults);
 
   function load(key, fb){ try{ return Object.assign({}, fb, JSON.parse(localStorage.getItem(key)||'{}')); }catch(e){ return {...fb}; } }
@@ -39,26 +40,48 @@
   //  Kamera
   // ======================================================
   let stream = null;
+  const RES = { max:{ w:3840, h:2160 }, fhd:{ w:1920, h:1080 }, hd:{ w:1280, h:720 } };
+
+  function videoConstraints(){
+    const d = RES[S.res] || RES.max;
+    return { facingMode: S.back ? 'environment' : 'user',
+             width:{ ideal:d.w }, height:{ ideal:d.h }, frameRate:{ ideal:S.fps } };
+  }
+  function audioConstraints(withDevice){
+    // przy zewnętrznym mikrofonie przetwarzanie potrafi zjeść dynamikę - stąd tryb surowy
+    const a = { echoCancellation: !S.raw, noiseSuppression: !S.raw, autoGainControl: !S.raw,
+                channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 } };
+    if (withDevice && S.micId) a.deviceId = { exact: S.micId };
+    return a;
+  }
+
   async function initCamera(){
     stopStream();
-    const constraints = {
-      audio: true,
-      video: { facingMode: S.back ? 'environment' : 'user',
-               width:{ ideal:1920 }, height:{ ideal:1080 } }
-    };
     try{
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(true), video: videoConstraints() });
+      }catch(e1){
+        // wybrany mikrofon zniknął (odłączony) - wracamy na systemowy
+        if (S.micId){ S.micId = ''; saveSettings();
+          stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(false), video: videoConstraints() });
+          showToast('Wybrany mikrofon jest niedostępny - wracam na systemowy');
+        } else throw e1;
+      }
       cam.srcObject = stream;
       detectZoom();
       applyZoom();
       camMsg.classList.remove('show');
       await cam.play().catch(()=>{});
+      await refreshMics();
+      updateMediaInfo();
+      if (openId === 'settingsSheet') startMeter();
     }catch(err){
       camMsg.classList.add('show');
       camMsgText.textContent = errText(err);
+      $('camInfo').textContent = 'Kamera wyłączona.';
     }
   }
-  function stopStream(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+  function stopStream(){ stopMeter(); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
   function errText(err){
     const n = err && err.name;
     if (n === 'NotAllowedError' || n === 'SecurityError')
@@ -101,6 +124,84 @@
       try{ vt.applyConstraints({ advanced:[{ zoom: z }] }); }catch(e){}
     }
     applyCamTransform();
+  }
+
+  // ======================================================
+  //  Co realnie leci do pliku: rozdzielczość, klatki, mikrofon
+  // ======================================================
+  let mics = [];
+  async function refreshMics(){
+    try{
+      const devs = await navigator.mediaDevices.enumerateDevices();
+      mics = devs.filter(d => d.kind === 'audioinput');
+    }catch(e){ mics = []; }
+    const sel = $('selMic'), cur = S.micId;
+    sel.innerHTML = '<option value="">Systemowy (domyślny)</option>';
+    mics.forEach((m, i) => {
+      const o = document.createElement('option');
+      o.value = m.deviceId;
+      o.textContent = m.label || ('Mikrofon ' + (i + 1));
+      sel.appendChild(o);
+    });
+    sel.value = mics.some(m => m.deviceId === cur) ? cur : '';
+  }
+
+  function micLabel(){
+    const at = stream && stream.getAudioTracks()[0];
+    if (!at) return 'brak';
+    if (at.label) return at.label;
+    const id = (at.getSettings && at.getSettings().deviceId) || '';
+    const m = mics.find(x => x.deviceId === id);
+    return (m && m.label) || 'systemowy';
+  }
+
+  function updateMediaInfo(){
+    const vt = stream && stream.getVideoTracks()[0];
+    if (!vt){ $('camInfo').textContent = 'Kamera wyłączona.'; return; }
+    const s = vt.getSettings ? vt.getSettings() : {};
+    const px = (s.width && s.height) ? s.width + '×' + s.height : 'nieznana rozdzielczość';
+    const fps = s.frameRate ? ' @ ' + Math.round(s.frameRate) + ' kl/s' : '';
+    const vbr = S.vbr ? S.vbr + ' Mb/s' : 'automatyczna';
+    $('camInfo').innerHTML = 'Nagrywa: <b>' + px + fps + '</b> · zapis ' + vbr +
+      '<br>Mikrofon: <b>' + esc(micLabel()) + '</b>' + (S.raw ? ' (surowy)' : '');
+    const at = stream.getAudioTracks()[0];
+    const as = at && at.getSettings ? at.getSettings() : {};
+    $('micInfo').textContent = 'Powiedz coś - pasek pokaże, który mikrofon łapie dźwięk.' +
+      (as.sampleRate ? ' Próbkowanie ' + Math.round(as.sampleRate / 1000) + ' kHz.' : '');
+  }
+
+  // Wskaźnik poziomu dźwięku - dowód, że nagrywa się właściwy mikrofon
+  let actx = null, analyser = null, meterRaf = null, meterOn = false;
+  function startMeter(){
+    if (!stream || meterOn) return;
+    try{
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume().catch(()=>{});
+      const src = actx.createMediaStreamSource(stream);
+      analyser = actx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+      const bar = $('meterBar');
+      meterOn = true;
+      const loop = () => {
+        if (!meterOn) return;
+        analyser.getByteTimeDomainData(buf);
+        let peak = 0;
+        for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128) / 128);
+        const pct = Math.min(100, Math.round(peak * 140));
+        bar.style.width = pct + '%';
+        bar.classList.toggle('hot', pct > 88);
+        meterRaf = requestAnimationFrame(loop);
+      };
+      loop();
+    }catch(e){ meterOn = false; }
+  }
+  function stopMeter(){
+    meterOn = false;
+    if (meterRaf) cancelAnimationFrame(meterRaf);
+    meterRaf = null;
+    const bar = $('meterBar'); if (bar) bar.style.width = '0%';
   }
 
   // ======================================================
@@ -203,8 +304,14 @@
 
   function startRecording(){
     chunks = []; recordedBlob = null; mime = pickMime();
-    try{ recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
-    catch(e){ recorder = new MediaRecorder(stream); }
+    const opts = { audioBitsPerSecond: 192000 };
+    if (mime) opts.mimeType = mime;
+    if (S.vbr) opts.videoBitsPerSecond = S.vbr * 1000000;
+    try{ recorder = new MediaRecorder(stream, opts); }
+    catch(e){
+      try{ recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+      catch(e2){ recorder = new MediaRecorder(stream); }
+    }
     recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = onRecStop;
     recorder.start();
@@ -238,10 +345,21 @@
     const type = (chunks[0] && chunks[0].type) || mime || 'video/mp4';
     recordedBlob = new Blob(chunks, { type });
     if (!recordedBlob.size){ showToast('Puste nagranie'); return; }
+    const secs = Math.max(0.1, (performance.now() - recStart) / 1000);
     const url = URL.createObjectURL(recordedBlob);
     const rv = $('reviewVid');
     rv.src = url; rv.muted = false;
+    rv.onloadedmetadata = () => showRecStats(rv, secs);
+    showRecStats(rv, secs);
     openSheet('reviewSheet');
+  }
+
+  function showRecStats(rv, secs){
+    const mb = recordedBlob.size / 1048576;
+    const mbps = (recordedBlob.size * 8) / secs / 1000000;
+    const px = (rv.videoWidth && rv.videoHeight) ? rv.videoWidth + '×' + rv.videoHeight + ' · ' : '';
+    $('recStats').innerHTML = px + mb.toFixed(1) + ' MB · ' + mbps.toFixed(1) + ' Mb/s · ' +
+      Math.round(secs) + ' s · dźwięk: ' + esc(micLabel());
   }
 
   // Zapis / udostępnianie
@@ -274,10 +392,10 @@
   let openId = null;
   function openSheet(id){ if(openId) $(openId).classList.remove('open');
     openId = id; $(id).classList.add('open'); backdrop.classList.add('show'); }
-  function closeSheet(){ if(openId) $(openId).classList.remove('open'); openId=null; backdrop.classList.remove('show'); }
+  function closeSheet(){ if(openId) $(openId).classList.remove('open'); openId=null; backdrop.classList.remove('show'); stopMeter(); }
   backdrop.addEventListener('click', closeSheet);
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheet));
-  $('btnSettings').addEventListener('click', () => openSheet('settingsSheet'));
+  $('btnSettings').addEventListener('click', () => { openSheet('settingsSheet'); updateMediaInfo(); startMeter(); });
   $('btnScripts').addEventListener('click', () => { renderScriptList(); hideEditor(); openSheet('scriptsSheet'); });
 
   // ======================================================
@@ -474,6 +592,31 @@
   bindToggle('tCount','countdown');
   bindToggle('tMirror','mirror', applyCamTransform);
   bindToggle('tBack','back', () => initCamera());
+  bindToggle('tRaw','raw', () => initCamera());
+
+  function bindSelect(id, key, num){
+    const el = $(id);
+    el.value = num ? String(S[key]) : S[key];
+    el.addEventListener('change', () => {
+      S[key] = num ? parseFloat(el.value) : el.value;
+      saveSettings();
+      if (key === 'vbr') updateMediaInfo();
+      else initCamera();
+    });
+  }
+  bindSelect('selRes','res');
+  bindSelect('selFps','fps', true);
+  bindSelect('selVbr','vbr', true);
+  bindSelect('selMic','micId');
+
+  // podłączenie/odłączenie mikrofonu w trakcie - odśwież listę
+  if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices){
+    navigator.mediaDevices.addEventListener('devicechange', async () => {
+      await refreshMics();
+      updateMediaInfo();
+      if (!recording) showToast('Zmiana urządzeń audio');
+    });
+  }
 
   // ======================================================
   //  Wake Lock (ekran nie gaśnie)

@@ -175,6 +175,21 @@
   .sect{ font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:#8a8a8a;
     margin:26px 0 10px; font-weight:700; }
 
+  /* wiersz z listą wyboru */
+  .frow{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0;
+    font-size:15px; color:#eee; }
+  .frow select{ flex:1; max-width:62%; background:#202020; border:1px solid #333; border-radius:10px;
+    color:#fff; padding:11px 12px; font-size:14.5px; font-family:inherit; -webkit-appearance:none;
+    appearance:none; background-image:linear-gradient(45deg,transparent 50%,#888 50%),
+      linear-gradient(135deg,#888 50%,transparent 50%);
+    background-position:calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat; }
+  /* wskaźnik poziomu dźwięku */
+  .meter{ height:8px; border-radius:4px; background:#262626; overflow:hidden; margin-top:16px; }
+  .meter i{ display:block; height:100%; width:0%; border-radius:4px; background:#34c759;
+    transition:width .06s linear; }
+  .meter i.hot{ background:var(--accent); }
+
   /* review */
   #reviewVid{ width:100%; border-radius:14px; background:#000; max-height:52dvh; margin-bottom:14px; }
 
@@ -286,6 +301,35 @@
       <input type="range" id="rOpac" min="0" max="90" step="1"></div>
     <div class="row"><div class="head"><span>Zoom kamery</span><b id="vZoom">1.0×</b></div>
       <input type="range" id="rZoom" min="1" max="3" step="0.1"></div>
+    <div class="sect">Obraz i dźwięk</div>
+    <p class="hint" id="camInfo" style="margin:0 0 14px;">Sprawdzam kamerę...</p>
+
+    <div class="frow"><span>Jakość obrazu</span>
+      <select id="selRes">
+        <option value="max">Maksymalna dostępna</option>
+        <option value="fhd">1080p (Full HD)</option>
+        <option value="hd">720p (lżejszy plik)</option>
+      </select></div>
+    <div class="frow"><span>Płynność</span>
+      <select id="selFps">
+        <option value="30">30 klatek/s</option>
+        <option value="60">60 klatek/s</option>
+      </select></div>
+    <div class="frow"><span>Jakość zapisu</span>
+      <select id="selVbr">
+        <option value="0">Automatyczna</option>
+        <option value="8">8 Mb/s</option>
+        <option value="12">12 Mb/s</option>
+        <option value="20">20 Mb/s (bardzo wysoka)</option>
+        <option value="30">30 Mb/s (maks.)</option>
+      </select></div>
+    <div class="frow"><span>Mikrofon</span>
+      <select id="selMic"><option value="">Systemowy (domyślny)</option></select></div>
+
+    <div class="meter"><i id="meterBar"></i></div>
+    <p class="hint" id="micInfo" style="margin-top:6px;">Powiedz coś - pasek pokaże, który mikrofon łapie dźwięk.</p>
+
+    <div class="toggle"><span>Surowy dźwięk (bez redukcji szumów i AGC)</span><div class="sw" id="tRaw"></div></div>
     <div class="toggle"><span>Odliczanie 3-2-1 przed nagraniem</span><div class="sw on" id="tCount"></div></div>
     <div class="toggle"><span>Lustrzany podgląd (nagranie zawsze normalne)</span><div class="sw on" id="tMirror"></div></div>
     <div class="toggle"><span>Kamera tylna (zamiast przedniej)</span><div class="sw" id="tBack"></div></div>
@@ -307,6 +351,7 @@
     <div class="grab"></div>
     <h2>Nagranie gotowe <button class="x" data-close>Zamknij</button></h2>
     <video id="reviewVid" playsinline controls></video>
+    <p class="hint" id="recStats" style="margin:-6px 0 14px;"></p>
     <button class="btn primary" id="saveRec" style="margin-bottom:10px;">Zapisz / Udostępnij</button>
     <button class="btn" id="againRec" style="margin-bottom:10px;">Nagraj ponownie</button>
     <p class="hint" id="reviewHint">Tapnij „Zapisz / Udostępnij" i wybierz <b>Zapisz wideo</b>, żeby trafiło do rolki.</p>
