@@ -103,19 +103,6 @@
   .warn{ background:#2a1b12; border:1px solid #4a2f1c; color:#e0b48b; border-radius:10px; padding:11px 13px;
     font-size:12.5px; line-height:1.55; margin-top:12px; }
 
-  /* ---------- ekran logowania ---------- */
-  #login{ position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center;
-    z-index:70; padding:20px; }
-  #login.show{ display:flex; }
-  #login .modal{ width:min(440px,100%); }
-  #login .brand{ font-weight:800; letter-spacing:.4px; font-size:15px; margin-bottom:14px; color:#9a9a9a; }
-  #login .brand b{ color:var(--txt); }
-  #login .brand span{ color:var(--accent); }
-  .mailbtn{ display:block; width:100%; text-align:left; background:var(--panel2); border:1px solid var(--line);
-    color:var(--txt); border-radius:11px; padding:14px 16px; margin-bottom:9px; font-size:14.5px; font-weight:600; }
-  .mailbtn:hover{ border-color:var(--accent); }
-  #code{ letter-spacing:.5em; font-size:22px; text-align:center; font-variant-numeric:tabular-nums; }
-
   /* ---------- toast ---------- */
   #toast{ position:fixed; left:50%; bottom:26px; transform:translateX(-50%); background:#000; border:1px solid var(--line);
     padding:11px 18px; border-radius:22px; font-size:13.5px; opacity:0; transition:opacity .25s; pointer-events:none;
@@ -185,12 +172,8 @@
   <div class="modal" id="modal"></div>
 </div>
 
-<div id="login"><div class="modal" id="loginBox"></div></div>
-
 <div id="toast"></div>
 
-<script src="./config.js"></script>
-<script src="./auth.js"></script>
 <script src="./store.js"></script>
 <script src="./dashboard.js"></script>
 </body>
