@@ -16,8 +16,14 @@
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
   const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, mirror:true, back:false,
-                     res:'fhd', fps:30, vbr:0, micId:'', raw:false, preroll:3, delay:0 };
+                     res:'fhd', fps:30, vbr:0, micId:'', raw:true, preroll:3, delay:0 };
   let S = load(SET_KEY, defaults);
+  // iOS z włączonym przetwarzaniem dźwięku (echo/szumy/AGC) ignoruje podpięty
+  // mikrofon i nagrywa wbudowanym - dlatego surowy dźwięk wchodzi na stałe jako domyślny
+  if (!localStorage.getItem('tp_raw_default_v2')){
+    localStorage.setItem('tp_raw_default_v2', '1');
+    S.raw = true; save(SET_KEY, S);
+  }
   // stary przełącznik odliczania -> nowe ustawienie w sekundach (jednorazowo)
   if (typeof S.countdown === 'boolean'){ S.preroll = S.countdown ? 3 : 0; delete S.countdown; save(SET_KEY, S); }
 
@@ -184,6 +190,9 @@
     if (autoMicDone || recording) return;
     autoMicDone = true;
     if (S.micId) return;
+    // iOS często pokazuje tylko jedno wejście i sam wybiera trasę - wtedy nic nie wymuszamy,
+    // liczy się wyłącznie wyłączone przetwarzanie dźwięku
+    if (mics.length < 2) return;
     const ext = mics.find(m => looksExternal(m.label));
     if (!ext) return;
     S.micId = ext.deviceId;
@@ -212,7 +221,8 @@
     const fps = s.frameRate ? ' @ ' + Math.round(s.frameRate) + ' kl/s' : '';
     const vbr = S.vbr ? S.vbr + ' Mb/s' : 'automatyczna';
     $('camInfo').innerHTML = 'Nagrywa: <b>' + px + fps + '</b> · zapis ' + vbr +
-      '<br>Mikrofon: <b>' + esc(micLabel()) + '</b>' + (S.raw ? ' (surowy)' : '');
+      '<br>Mikrofon: <b>' + esc(micLabel()) + '</b>' +
+      (S.raw ? ' · przetwarzanie wyłączone' : ' · <span style="color:#e0b48b">przetwarzanie włączone (iPhone może ignorować zewnętrzny mikrofon)</span>');
     const at = stream.getAudioTracks()[0];
     const as = at && at.getSettings ? at.getSettings() : {};
     $('micInfo').textContent = 'Powiedz coś - pasek pokaże, który mikrofon łapie dźwięk.' +
@@ -786,6 +796,18 @@
   bindToggle('tMirror','mirror', applyCamTransform);
   bindToggle('tBack','back', () => initCamera());
   bindToggle('tRaw','raw', () => swapAudio());
+
+  /* Podpięcie mikrofonu przy otwartej apce nie przełącza trasy audio samo z siebie -
+     ten przycisk bierze wejście od nowa, nie ruszając obrazu. */
+  $('micReload').addEventListener('click', async () => {
+    if (recording){ showToast('Nie w trakcie nagrania'); return; }
+    autoMicDone = false;
+    const before = micLabel();
+    showToast('Przeładowuję mikrofon...');
+    await swapAudio();
+    const after = micLabel();
+    showToast(after && after !== before ? 'Teraz: ' + after : 'Wejście: ' + after + ' - sprawdź pasek');
+  });
 
   function bindSelect(id, key, num){
     const el = $(id);
