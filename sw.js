@@ -1,7 +1,7 @@
 /* Prompter service worker.
    Sieć-najpierw z krótkim limitem czasu (żeby aktualizacje wchodziły od razu),
    cache jako zapas - po pierwszym otwarciu apka działa offline. */
-const CACHE = 'tp-shell-v7';
+const CACHE = 'tp-shell-v8';
 const TIMEOUT = 2500;
 const ASSETS = [
   './',
@@ -39,7 +39,9 @@ self.addEventListener('fetch', (e) => {
   e.respondWith((async () => {
     const cached = await caches.match(req);
     try {
-      const res = await withTimeout(fetch(req), TIMEOUT);
+      // no-store: omijamy cache HTTP przeglądarki, żeby po aktualizacji nie
+      // zmieszały się pliki z dwóch wersji (np. nowy index.html + stary store.js)
+      const res = await withTimeout(fetch(req, { cache: 'no-store' }), TIMEOUT);
       if (res && res.status === 200 && res.type === 'basic') {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));

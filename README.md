@@ -36,7 +36,8 @@ Synchronizacja idzie w obie strony: przy starcie, po powrocie do apki i po każd
 - Wiele zapisanych skryptów (intro, outro, oferta...), edytowalnych i na telefonie, i na komputerze
 - Odliczanie przed startem: bez / 3 / 5 / 10 s, przerywane tapnięciem w czerwony przycisk
 - Osobne opóźnienie startu tekstu: od razu albo po 1-8 s od rozpoczęcia nagrania (plakietka „tekst za N” w pasku nagrywania)
-- Nagrywanie obrazu z kamery + dźwięku (bez tekstu w pliku)
+- Linie produkcyjne (PRZEBITKA, NA EKRANIE, BÓL, timecody, wtrącenia w nawiasach) wyszarzone i pomijane w liczeniu czasu czytania
+- Nagrywanie obrazu z kamery + dźwięku (bez tekstu w pliku), plik nazwany tytułem skryptu
 - Ekran nie gaśnie, działa offline (PWA)
 
 ## Technicznie

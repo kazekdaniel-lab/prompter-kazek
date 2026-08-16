@@ -103,9 +103,25 @@
   function lastId(){ return localStorage.getItem(LAST_KEY) || ''; }
   function setLastId(id){ try{ localStorage.setItem(LAST_KEY, id); }catch(e){} }
 
+  // ---------- linie produkcyjne (nie do czytania na głos) ----------
+  /* PRZEBITKA:, NA EKRANIE:, BÓL:, DŁUGOŚĆ:, nagłówki z timecodem (HOOK 0-5s)
+     oraz całe linie w nawiasie. Zostają w tekście, ale prompter je wygasza
+     i nie liczy do czasu czytania. */
+  const NOTE_RE = /^\s*(przebitka|na ekranie|b[oó]l|d[lł]ugo[sś][cć]|gest|uwaga|notatka|hook|mechanizm|rozwi[aą]zanie|cta|intro|outro)\b\s*[:0-9]/i;
+  const NOTE_PAREN = /^\s*\(.*\)\s*$/;
+  const INLINE_NOTE = /\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi;
+
+  function isNote(line){ return NOTE_RE.test(line) || NOTE_PAREN.test(line); }
+  function spoken(text){
+    return String(text || '').split('\n')
+      .filter(l => !isNote(l))
+      .join('\n')
+      .replace(INLINE_NOTE, ' ');
+  }
+
   // ---------- statystyki ----------
   function stats(text, wpm){
-    const t = String(text || '').trim();
+    const t = spoken(text).trim();
     const words = t ? t.split(/\s+/).length : 0;
     const secs = words ? Math.round(words / ((wpm || 140) / 60)) : 0;
     return { chars: String(text || '').length, words, secs,
@@ -278,7 +294,7 @@
 
   global.TPStore = {
     all, get, raw, writeRaw, count, save, remove, duplicate, reorder, seedIfEmpty,
-    lastId, setLastId, stats, ago, uid, who,
+    lastId, setLastId, stats, ago, uid, who, isNote, spoken,
     cloud, setCloud, clearCloud, connected, connect, sync, pairCode, applyPairCode, pullInbox,
     exportJSON, importJSON, importPlain,
     TOKEN_URL: 'https://github.com/settings/tokens/new?scopes=gist&description=Prompter'

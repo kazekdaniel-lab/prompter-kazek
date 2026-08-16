@@ -15,11 +15,11 @@
 
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
-  const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, countdown:true, mirror:true, back:false,
+  const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, mirror:true, back:false,
                      res:'max', fps:30, vbr:0, micId:'', raw:false, preroll:3, delay:0 };
   let S = load(SET_KEY, defaults);
-  // stary przełącznik odliczania -> nowe ustawienie w sekundach
-  if (typeof S.countdown === 'boolean'){ S.preroll = S.countdown ? 3 : 0; delete S.countdown; }
+  // stary przełącznik odliczania -> nowe ustawienie w sekundach (jednorazowo)
+  if (typeof S.countdown === 'boolean'){ S.preroll = S.countdown ? 3 : 0; delete S.countdown; save(SET_KEY, S); }
 
   function load(key, fb){ try{ return Object.assign({}, fb, JSON.parse(localStorage.getItem(key)||'{}')); }catch(e){ return {...fb}; } }
   function save(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
@@ -213,7 +213,12 @@
 
   function renderText(){
     const s = currentScript();
-    textEl.textContent = s ? (s.text || '') : EMPTY_TEXT;
+    const txt = s ? (s.text || '') : EMPTY_TEXT;
+    // linie produkcyjne zostają w tekście, ale są wygaszone - oko je przeskakuje
+    textEl.innerHTML = txt.split('\n').map(line => {
+      const body = esc(line).replace(/\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi, m => '<i class="note">' + m + '</i>');
+      return DB.isNote(line) ? '<i class="note">' + esc(line) + '</i>' : body;
+    }).join('\n');
     requestAnimationFrame(relayout);
   }
   function relayout(){
@@ -274,6 +279,7 @@
   //  Nagrywanie
   // ======================================================
   let recorder = null, chunks = [], recording = false, recordedBlob = null, recStart = 0, recTimer = null, mime = '';
+  let recScriptName = '';   // tytuł skryptu z chwili startu - trafia do nazwy pliku
 
   function pickMime(){
     if (!('MediaRecorder' in window)) return '';
@@ -316,6 +322,8 @@
 
   function startRecording(){
     chunks = []; recordedBlob = null; mime = pickMime();
+    const cs = currentScript();
+    recScriptName = (cs && cs.name) || 'prompter';
     const opts = { audioBitsPerSecond: 192000 };
     if (mime) opts.mimeType = mime;
     if (S.vbr) opts.videoBitsPerSecond = S.vbr * 1000000;
@@ -395,19 +403,30 @@
     const mb = recordedBlob.size / 1048576;
     const mbps = (recordedBlob.size * 8) / secs / 1000000;
     const px = (rv.videoWidth && rv.videoHeight) ? rv.videoWidth + '×' + rv.videoHeight + ' · ' : '';
-    $('recStats').innerHTML = px + mb.toFixed(1) + ' MB · ' + mbps.toFixed(1) + ' Mb/s · ' +
-      Math.round(secs) + ' s · dźwięk: ' + esc(micLabel());
+    $('recStats').innerHTML = '<b>' + esc(recScriptName) + '</b><br>' + px + mb.toFixed(1) + ' MB · ' +
+      mbps.toFixed(1) + ' Mb/s · ' + Math.round(secs) + ' s · dźwięk: ' + esc(micLabel());
   }
 
   // Zapis / udostępnianie
   $('saveRec').addEventListener('click', shareRecording);
+  /* Nazwa pliku bierze tytuł skryptu, z którego nagrywałeś. */
+  function slug(s){
+    return String(s || '').trim()
+      .replace(/[\\/:*?'"<>|#%{}$!@+`=,;.]/g, '')  // znaki kłopotliwe w nazwach plików
+      .replace(/\s+/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '')
+      .slice(0, 64) || 'prompter';
+  }
+
   async function shareRecording(){
     if (!recordedBlob) return;
     const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
-    const name = 'prompter-' + tstamp() + '.' + ext;
+    const title = recScriptName || (currentScript() && currentScript().name) || 'prompter';
+    const name = slug(title) + '-' + tstamp() + '.' + ext;
     const file = new File([recordedBlob], name, { type: recordedBlob.type });
     if (navigator.canShare && navigator.canShare({ files:[file] })){
-      try{ await navigator.share({ files:[file], title:'Nagranie' }); return; }
+      try{ await navigator.share({ files:[file], title: title }); return; }
       catch(e){ if (e && e.name === 'AbortError') return; }
     }
     // fallback: pobranie pliku
