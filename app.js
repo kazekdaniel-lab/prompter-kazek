@@ -57,7 +57,10 @@
     return a;
   }
 
+  let camBusy = false;
   async function initCamera(){
+    if (camBusy) return;              // bez podwójnych startów - każdy to mrugnięcie obrazu
+    camBusy = true;
     stopStream();
     try{
       try{
@@ -81,6 +84,26 @@
       camMsg.classList.add('show');
       camMsgText.textContent = errText(err);
       $('camInfo').textContent = 'Kamera wyłączona.';
+    }finally{ camBusy = false; }
+  }
+
+  /* Zmiana mikrofonu albo trybu surowego nie może ruszać obrazu - podmieniamy
+     samą ścieżkę audio w istniejącym strumieniu, obraz leci bez mrugnięcia. */
+  async function swapAudio(){
+    if (!stream || recording) return initCamera();
+    try{
+      const fresh = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(true) });
+      const nt = fresh.getAudioTracks()[0];
+      if (!nt) return;
+      stopMeter();
+      stream.getAudioTracks().forEach(t => { stream.removeTrack(t); t.stop(); });
+      stream.addTrack(nt);
+      await refreshMics();
+      updateMediaInfo();
+      if (openId === 'settingsSheet') startMeter();
+    }catch(err){
+      if (S.micId){ S.micId = ''; saveSettings(); showToast('Ten mikrofon jest niedostępny'); }
+      initCamera();
     }
   }
   function stopStream(){ stopMeter(); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
@@ -169,7 +192,7 @@
     $('tRaw').classList.add('on');
     $('selMic').value = ext.deviceId;
     showToast('Wykryto mikrofon: ' + ext.label);
-    initCamera();
+    swapAudio();
   }
 
   function micLabel(){
@@ -201,7 +224,7 @@
   function startMeter(){
     if (!stream || meterOn || recording) return;   // w trakcie nagrania nie dotykamy ścieżki audio
     try{
-      actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!actx || actx.state === 'closed') actx = new (window.AudioContext || window.webkitAudioContext)();
       if (actx.state === 'suspended') actx.resume().catch(()=>{});
       meterSrc = actx.createMediaStreamSource(stream);
       analyser = actx.createAnalyser();
@@ -225,15 +248,21 @@
   }
   /* Pełne zamknięcie: sam AudioContext wiszący na strumieniu potrafi na iOS
      przerwać sesję audio w trakcie nagrywania. */
-  function stopMeter(){
+  function stopMeter(hard){
     meterOn = false;
     if (meterRaf) cancelAnimationFrame(meterRaf);
     meterRaf = null;
     try{ if (meterSrc) meterSrc.disconnect(); }catch(e){}
     try{ if (analyser) analyser.disconnect(); }catch(e){}
     meterSrc = null; analyser = null;
-    try{ if (actx && actx.state !== 'closed') actx.close(); }catch(e){}
-    actx = null;
+    // przy nagrywaniu zamykamy kontekst do końca, poza tym tylko usypiamy
+    // (ciągłe zamykanie i otwieranie przestawia sesję audio i mruga obrazem)
+    try{
+      if (actx && actx.state !== 'closed'){
+        if (hard){ actx.close(); actx = null; }
+        else actx.suspend();
+      }
+    }catch(e){}
     const bar = $('meterBar'); if (bar) bar.style.width = '0%';
   }
 
@@ -411,7 +440,7 @@
     recorder.onstop = onRecStop;
     recorder.onerror = (e) => failRec('koder zgłosił błąd (' + ((e && e.error && e.error.name) || 'nieznany') + ')');
     watchTracks();
-    stopMeter();                 // żaden AudioContext nie może wisieć na strumieniu w trakcie nagrania
+    stopMeter(true);             // żaden AudioContext nie może wisieć na strumieniu w trakcie nagrania
     failReason = '';
     // timeslice: dane spływają co sekundę zamiast rosnąć w pamięci jednym kawałkiem
     // (bez tego Safari na iOS potrafi uciąć dłuższe nagranie)
@@ -756,7 +785,7 @@
   }
   bindToggle('tMirror','mirror', applyCamTransform);
   bindToggle('tBack','back', () => initCamera());
-  bindToggle('tRaw','raw', () => initCamera());
+  bindToggle('tRaw','raw', () => swapAudio());
 
   function bindSelect(id, key, num){
     const el = $(id);
@@ -783,7 +812,7 @@
         showToast('Włączam surowy dźwięk - inaczej iPhone wraca na swój mikrofon');
       }
       saveSettings();
-      initCamera();
+      swapAudio();
     });
   })();
   (function(){
@@ -795,11 +824,19 @@
   })();
 
   // podłączenie/odłączenie mikrofonu w trakcie - odśwież listę
+  // iOS lubi sypać tym zdarzeniem seriami - stąd opóźnienie i porównanie listy
   if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices){
-    navigator.mediaDevices.addEventListener('devicechange', async () => {
-      await refreshMics();
-      updateMediaInfo();
-      if (!recording) showToast('Zmiana urządzeń audio');
+    let devT = null, lastIds = '';
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      clearTimeout(devT);
+      devT = setTimeout(async () => {
+        if (recording) return;
+        await refreshMics();
+        const ids = mics.map(m => m.deviceId).join(',');
+        if (ids === lastIds) return;
+        lastIds = ids;
+        updateMediaInfo();
+      }, 600);
     });
   }
 
