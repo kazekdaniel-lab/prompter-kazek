@@ -72,6 +72,8 @@
   #recbar .t{ font-variant-numeric:tabular-nums; font-weight:600; font-size:15px;
     background:rgba(0,0,0,.5); padding:5px 11px; border-radius:20px; }
   @keyframes blink{ 50%{ opacity:.25 } }
+  #recbar .hold{ display:none; background:rgba(255,59,48,.85); }
+  #recbar .hold.show{ display:inline-block; }
 
   /* ---- Szybka prędkość (prawa krawędź, także podczas nagrania) ---- */
   #speedq{ position:absolute; right:10px; top:50%; transform:translateY(-50%); z-index:25;
@@ -227,7 +229,7 @@
     <div id="readline"></div>
   </div>
 
-  <div id="recbar"><span class="dot"></span><span class="t" id="recTime">0:00</span></div>
+  <div id="recbar"><span class="dot"></span><span class="t" id="recTime">0:00</span><span class="t hold" id="recHold">tekst za 3</span></div>
 
   <div id="speedq">
     <button class="rbtn" id="spdUp" aria-label="Szybciej">+</button>
@@ -330,7 +332,25 @@
     <p class="hint" id="micInfo" style="margin-top:6px;">Powiedz coś - pasek pokaże, który mikrofon łapie dźwięk.</p>
 
     <div class="toggle"><span>Surowy dźwięk (bez redukcji szumów i AGC)</span><div class="sw" id="tRaw"></div></div>
-    <div class="toggle"><span>Odliczanie 3-2-1 przed nagraniem</span><div class="sw on" id="tCount"></div></div>
+
+    <div class="sect">Start nagrania</div>
+    <div class="frow"><span>Odliczanie przed startem</span>
+      <select id="selPre">
+        <option value="0">Bez odliczania</option>
+        <option value="3">3 sekundy</option>
+        <option value="5">5 sekund</option>
+        <option value="10">10 sekund</option>
+      </select></div>
+    <div class="frow"><span>Tekst rusza po starcie</span>
+      <select id="selDelay">
+        <option value="0">Od razu</option>
+        <option value="1">Po 1 sekundzie</option>
+        <option value="2">Po 2 sekundach</option>
+        <option value="3">Po 3 sekundach</option>
+        <option value="5">Po 5 sekundach</option>
+        <option value="8">Po 8 sekundach</option>
+      </select></div>
+    <p class="hint">Odliczanie daje czas na odłożenie telefonu, a opóźnienie tekstu - na spokojne wejście w kadr i pierwsze spojrzenie w obiektyw, zanim ruszy przewijanie.</p>
     <div class="toggle"><span>Lustrzany podgląd (nagranie zawsze normalne)</span><div class="sw on" id="tMirror"></div></div>
     <div class="toggle"><span>Kamera tylna (zamiast przedniej)</span><div class="sw" id="tBack"></div></div>
     <p class="hint">Tekst jest tylko na ekranie - w nagraniu go nie ma. Nagrywa się sam obraz z kamery i dźwięk, wszystko zostaje na telefonie.</p>

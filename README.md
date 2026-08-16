@@ -34,7 +34,8 @@ Synchronizacja idzie w obie strony: przy starcie, po powrocie do apki i po każd
 - Ustawienia jakości: rozdzielczość (maks. dostępna / 1080p / 720p), 30 lub 60 klatek, bitrate do 30 Mb/s, dźwięk 192 kb/s
 - Wybór mikrofonu (łapie zewnętrzne), tryb surowego dźwięku bez redukcji szumów i AGC, wskaźnik poziomu + podgląd realnych parametrów nagrania
 - Wiele zapisanych skryptów (intro, outro, oferta...), edytowalnych i na telefonie, i na komputerze
-- Odliczanie 3-2-1 przed startem
+- Odliczanie przed startem: bez / 3 / 5 / 10 s, przerywane tapnięciem w czerwony przycisk
+- Osobne opóźnienie startu tekstu: od razu albo po 1-8 s od rozpoczęcia nagrania (plakietka „tekst za N” w pasku nagrywania)
 - Nagrywanie obrazu z kamery + dźwięku (bez tekstu w pliku)
 - Ekran nie gaśnie, działa offline (PWA)
 

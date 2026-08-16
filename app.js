@@ -16,8 +16,10 @@
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
   const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, countdown:true, mirror:true, back:false,
-                     res:'max', fps:30, vbr:0, micId:'', raw:false };
+                     res:'max', fps:30, vbr:0, micId:'', raw:false, preroll:3, delay:0 };
   let S = load(SET_KEY, defaults);
+  // stary przełącznik odliczania -> nowe ustawienie w sekundach
+  if (typeof S.countdown === 'boolean'){ S.preroll = S.countdown ? 3 : 0; delete S.countdown; }
 
   function load(key, fb){ try{ return Object.assign({}, fb, JSON.parse(localStorage.getItem(key)||'{}')); }catch(e){ return {...fb}; } }
   function save(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
@@ -281,22 +283,32 @@
     return '';
   }
 
-  recBtn.addEventListener('click', () => { if (recording) stopRecording(); else startFlow(); });
+  recBtn.addEventListener('click', () => {
+    if (counting){ cancelled = true; showToast('Odliczanie przerwane'); return; }
+    if (recording) stopRecording(); else startFlow();
+  });
 
   async function startFlow(){
     if (!stream){ await initCamera(); if (!stream){ showToast('Najpierw włącz kamerę'); return; } }
     if (!('MediaRecorder' in window)){ showToast('Ta przeglądarka nie nagrywa wideo'); return; }
-    if (S.countdown) await countdown(3);
+    if (S.preroll > 0){
+      cancelled = false;
+      await countdown(S.preroll);
+      if (cancelled) return;          // tapnięcie w czerwony przycisk w trakcie odliczania = anulowanie
+    }
     startRecording();
   }
+  let cancelled = false;
 
+  let counting = false;
   function countdown(n){
     return new Promise((resolve) => {
+      counting = true;
       countEl.classList.add('show');
       countNum.textContent = n;
       const iv = setInterval(() => {
         n--;
-        if (n <= 0){ clearInterval(iv); countEl.classList.remove('show'); resolve(); }
+        if (cancelled || n <= 0){ clearInterval(iv); countEl.classList.remove('show'); counting = false; resolve(); }
         else countNum.textContent = n;
       }, 1000);
     });
@@ -319,15 +331,40 @@
     recBtn.classList.add('recording');
     recbar.classList.add('show');
     setChromeHidden(true);
-    restartScroll(); setPlaying(true);
+    restartScroll();
+    startTextDelay();
     recStart = performance.now();
     updateRecTime();
     recTimer = setInterval(updateRecTime, 250);
   }
 
+  /* Tekst może ruszyć dopiero po chwili od startu nagrania - czas na wejście w kadr. */
+  let holdTimer = null, holdTick = null;
+  const recHold = $('recHold');
+  function startTextDelay(){
+    clearTextDelay();
+    const d = Math.round(S.delay || 0);
+    if (d <= 0){ setPlaying(true); return; }
+    setPlaying(false);
+    let left = d;
+    recHold.textContent = 'tekst za ' + left;
+    recHold.classList.add('show');
+    holdTick = setInterval(() => {
+      left--;
+      if (left > 0) recHold.textContent = 'tekst za ' + left;
+    }, 1000);
+    holdTimer = setTimeout(() => { clearTextDelay(); if (recording) setPlaying(true); }, d * 1000);
+  }
+  function clearTextDelay(){
+    clearTimeout(holdTimer); clearInterval(holdTick);
+    holdTimer = holdTick = null;
+    recHold.classList.remove('show');
+  }
+
   function stopRecording(){
     if (!recorder || !recording) return;
     recording = false;
+    clearTextDelay();
     setPlaying(false);
     clearInterval(recTimer);
     recBtn.classList.remove('recording');
@@ -589,7 +626,6 @@
       if (onChange) onChange();
     });
   }
-  bindToggle('tCount','countdown');
   bindToggle('tMirror','mirror', applyCamTransform);
   bindToggle('tBack','back', () => initCamera());
   bindToggle('tRaw','raw', () => initCamera());
@@ -608,6 +644,13 @@
   bindSelect('selFps','fps', true);
   bindSelect('selVbr','vbr', true);
   bindSelect('selMic','micId');
+  (function(){
+    [['selPre','preroll'], ['selDelay','delay']].forEach(([id, key]) => {
+      const el = $(id);
+      el.value = String(S[key]);
+      el.addEventListener('change', () => { S[key] = parseInt(el.value, 10) || 0; saveSettings(); });
+    });
+  })();
 
   // podłączenie/odłączenie mikrofonu w trakcie - odśwież listę
   if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices){
