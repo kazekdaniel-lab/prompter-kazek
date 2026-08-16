@@ -197,6 +197,10 @@
 
   /* review */
   #reviewVid{ width:100%; border-radius:14px; background:#000; max-height:52dvh; margin-bottom:14px; }
+  #recFail{ display:none; background:#2a1416; border:1px solid #5a2a2a; border-radius:12px;
+    padding:13px 15px; margin:-4px 0 14px; font-size:13.5px; line-height:1.55; color:#ffc9c4; }
+  #recFail.show{ display:block; }
+  #recFail b{ color:#fff; }
 
   /* install hint */
   #install{ position:absolute; left:12px; right:12px; bottom:calc(var(--safe-b) + 96px); z-index:35;
@@ -311,8 +315,8 @@
 
     <div class="frow"><span>Jakość obrazu</span>
       <select id="selRes">
-        <option value="max">Maksymalna dostępna</option>
-        <option value="fhd">1080p (Full HD)</option>
+        <option value="fhd">1080p (zalecane, stabilne)</option>
+        <option value="max">Maksymalna dostępna (bywa przerywana)</option>
         <option value="hd">720p (lżejszy plik)</option>
       </select></div>
     <div class="frow"><span>Płynność</span>
@@ -374,6 +378,8 @@
     <div class="grab"></div>
     <h2>Nagranie gotowe <button class="x" data-close>Zamknij</button></h2>
     <video id="reviewVid" playsinline controls></video>
+    <div id="recFail"><div id="recFailTxt"></div>
+      <button class="btn" id="recFix" style="margin-top:10px;">Ustaw tryb pewny: 1080p · 30 kl/s · 12 Mb/s</button></div>
     <p class="hint" id="recStats" style="margin:-6px 0 14px;"></p>
     <button class="btn primary" id="saveRec" style="margin-bottom:10px;">Zapisz / Udostępnij</button>
     <button class="btn" id="againRec" style="margin-bottom:10px;">Nagraj ponownie</button>
@@ -383,7 +389,7 @@
   <div id="backdrop"></div>
 </div>
 
-<script src="./store.js?v=8"></script>
-<script src="./app.js?v=8"></script>
+<script src="./store.js?v=9"></script>
+<script src="./app.js?v=9"></script>
 </body>
 </html>

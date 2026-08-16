@@ -16,7 +16,7 @@
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
   const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, mirror:true, back:false,
-                     res:'max', fps:30, vbr:0, micId:'', raw:false, preroll:3, delay:0 };
+                     res:'fhd', fps:30, vbr:0, micId:'', raw:false, preroll:3, delay:0 };
   let S = load(SET_KEY, defaults);
   // stary przełącznik odliczania -> nowe ustawienie w sekundach (jednorazowo)
   if (typeof S.countdown === 'boolean'){ S.preroll = S.countdown ? 3 : 0; delete S.countdown; save(SET_KEY, S); }
@@ -146,6 +146,30 @@
       sel.appendChild(o);
     });
     sel.value = mics.some(m => m.deviceId === cur) ? cur : '';
+    autoPickExternal();
+  }
+
+  /* iOS przy włączonym przetwarzaniu dźwięku (echo/szumy/AGC) trzyma się wbudowanego
+     mikrofonu i ignoruje podpięty zewnętrzny. Dlatego przy zewnętrznym wchodzi tryb surowy. */
+  function looksExternal(label){
+    const l = String(label || '').toLowerCase();
+    if (!l) return false;
+    return !/iphone|ipad|macbook|wbudowan|built-?in|domy[sś]ln|default|airpods|s[lł]uchawk|headphone/.test(l);
+  }
+  let autoMicDone = false;
+  function autoPickExternal(){
+    if (autoMicDone || recording) return;
+    autoMicDone = true;
+    if (S.micId) return;
+    const ext = mics.find(m => looksExternal(m.label));
+    if (!ext) return;
+    S.micId = ext.deviceId;
+    S.raw = true;                       // bez tego iOS i tak weźmie wbudowany
+    saveSettings();
+    $('tRaw').classList.add('on');
+    $('selMic').value = ext.deviceId;
+    showToast('Wykryto mikrofon: ' + ext.label);
+    initCamera();
   }
 
   function micLabel(){
@@ -173,16 +197,16 @@
   }
 
   // Wskaźnik poziomu dźwięku - dowód, że nagrywa się właściwy mikrofon
-  let actx = null, analyser = null, meterRaf = null, meterOn = false;
+  let actx = null, analyser = null, meterRaf = null, meterOn = false, meterSrc = null;
   function startMeter(){
-    if (!stream || meterOn) return;
+    if (!stream || meterOn || recording) return;   // w trakcie nagrania nie dotykamy ścieżki audio
     try{
-      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      actx = new (window.AudioContext || window.webkitAudioContext)();
       if (actx.state === 'suspended') actx.resume().catch(()=>{});
-      const src = actx.createMediaStreamSource(stream);
+      meterSrc = actx.createMediaStreamSource(stream);
       analyser = actx.createAnalyser();
       analyser.fftSize = 1024;
-      src.connect(analyser);
+      meterSrc.connect(analyser);
       const buf = new Uint8Array(analyser.fftSize);
       const bar = $('meterBar');
       meterOn = true;
@@ -199,10 +223,17 @@
       loop();
     }catch(e){ meterOn = false; }
   }
+  /* Pełne zamknięcie: sam AudioContext wiszący na strumieniu potrafi na iOS
+     przerwać sesję audio w trakcie nagrywania. */
   function stopMeter(){
     meterOn = false;
     if (meterRaf) cancelAnimationFrame(meterRaf);
     meterRaf = null;
+    try{ if (meterSrc) meterSrc.disconnect(); }catch(e){}
+    try{ if (analyser) analyser.disconnect(); }catch(e){}
+    meterSrc = null; analyser = null;
+    try{ if (actx && actx.state !== 'closed') actx.close(); }catch(e){}
+    actx = null;
     const bar = $('meterBar'); if (bar) bar.style.width = '0%';
   }
 
@@ -253,15 +284,42 @@
   $('btnPlay').addEventListener('click', () => setPlaying(!playing));
   $('btnRestart').addEventListener('click', () => { restartScroll(); if(!recording) setPlaying(false); });
 
-  // Tap na panelu = play/pauza; podwójny tap = od nowa
-  let lastTap = 0;
-  prompter.addEventListener('click', (e) => {
-    if (recording) return;
+  // Palec po panelu = ręczne przewijanie tekstu (działa też w trakcie nagrania).
+  // Tap bez przesunięcia = pauza/wznowienie, podwójny tap = od początku.
+  let lastTap = 0, drag = null;
+
+  prompter.addEventListener('pointerdown', (e) => {
+    drag = { y: e.clientY, y0: e.clientY, moved: false, wasPlaying: playing };
+    try{ prompter.setPointerCapture(e.pointerId); }catch(err){}
+  });
+  prompter.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (!drag.moved && Math.abs(e.clientY - drag.y0) > 6){
+      drag.moved = true;
+      if (playing) setPlaying(false);          // przy chwytaniu tekst staje
+    }
+    if (drag.moved){
+      scrollPos = Math.max(0, Math.min(maxScroll, scrollPos - (e.clientY - drag.y)));
+      applyScroll();
+      drag.y = e.clientY;
+    }
+  });
+  function endDrag(e){
+    if (!drag) return;
+    const moved = drag.moved, wasPlaying = drag.wasPlaying;
+    drag = null;
+    try{ prompter.releasePointerCapture(e.pointerId); }catch(err){}
+    if (moved){
+      if (wasPlaying) setPlaying(true);        // po przewinięciu wraca do tego, co było
+      return;
+    }
     const now = Date.now();
     if (now - lastTap < 300){ restartScroll(); setPlaying(false); }
     else setPlaying(!playing);
     lastTap = now;
-  });
+  }
+  prompter.addEventListener('pointerup', endDrag);
+  prompter.addEventListener('pointercancel', endDrag);
 
   // ======================================================
   //  Prędkość (szybkie +/- na prawej krawędzi)
@@ -280,6 +338,22 @@
   // ======================================================
   let recorder = null, chunks = [], recording = false, recordedBlob = null, recStart = 0, recTimer = null, mime = '';
   let recScriptName = '';   // tytuł skryptu z chwili startu - trafia do nazwy pliku
+  let failReason = '';      // powód, dla którego nagranie skończyło się samo
+
+  /* Gdy system ubije kamerę, mikrofon albo koder, MediaRecorder cichnie bez słowa.
+     Pilnujemy ścieżek i błędów kodera, żeby dało się to zobaczyć i uratować materiał. */
+  function watchTracks(){
+    if (!stream) return;
+    stream.getTracks().forEach(t => {
+      t.onended = () => failRec((t.kind === 'audio' ? 'mikrofon' : 'kamera') + ' przestała dostarczać sygnał');
+      t.onmute = () => { if (recording && t.kind === 'audio') showToast('Mikrofon wyciszony przez system'); };
+    });
+  }
+  function failRec(reason){
+    if (!recording) return;
+    failReason = reason;
+    stopRecording();
+  }
 
   function pickMime(){
     if (!('MediaRecorder' in window)) return '';
@@ -297,6 +371,7 @@
   async function startFlow(){
     if (!stream){ await initCamera(); if (!stream){ showToast('Najpierw włącz kamerę'); return; } }
     if (!('MediaRecorder' in window)){ showToast('Ta przeglądarka nie nagrywa wideo'); return; }
+    acquireWake();                    // ekran nie może zgasnąć w trakcie ujęcia
     if (S.preroll > 0){
       cancelled = false;
       await countdown(S.preroll);
@@ -334,7 +409,13 @@
     }
     recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = onRecStop;
-    recorder.start();
+    recorder.onerror = (e) => failRec('koder zgłosił błąd (' + ((e && e.error && e.error.name) || 'nieznany') + ')');
+    watchTracks();
+    stopMeter();                 // żaden AudioContext nie może wisieć na strumieniu w trakcie nagrania
+    failReason = '';
+    // timeslice: dane spływają co sekundę zamiast rosnąć w pamięci jednym kawałkiem
+    // (bez tego Safari na iOS potrafi uciąć dłuższe nagranie)
+    recorder.start(1000);
     recording = true;
     recBtn.classList.add('recording');
     recbar.classList.add('show');
@@ -387,10 +468,15 @@
   }
 
   function onRecStop(){
+    // jeśli recording jest wciąż true, to znaczy, że nikt nie tapnął stopu - przerwał system
+    const interrupted = recording || !!failReason;
+    if (recording){ recording = false; clearTextDelay(); setPlaying(false); clearInterval(recTimer);
+      recBtn.classList.remove('recording'); recbar.classList.remove('show'); setChromeHidden(false); }
     const type = (chunks[0] && chunks[0].type) || mime || 'video/mp4';
     recordedBlob = new Blob(chunks, { type });
-    if (!recordedBlob.size){ showToast('Puste nagranie'); return; }
+    if (!recordedBlob.size){ showToast('Puste nagranie' + (failReason ? ': ' + failReason : '')); return; }
     const secs = Math.max(0.1, (performance.now() - recStart) / 1000);
+    showFail(interrupted, secs);
     const url = URL.createObjectURL(recordedBlob);
     const rv = $('reviewVid');
     rv.src = url; rv.muted = false;
@@ -398,6 +484,29 @@
     showRecStats(rv, secs);
     openSheet('reviewSheet');
   }
+
+  function showFail(interrupted, secs){
+    const box = $('recFail');
+    box.classList.toggle('show', !!interrupted);
+    if (!interrupted) return;
+    const vt = stream && stream.getVideoTracks()[0];
+    const set = (vt && vt.getSettings) ? vt.getSettings() : {};
+    const heavy = (set.height > 1200) || S.vbr >= 20 || S.fps > 30;
+    $('recFailTxt').innerHTML =
+      '<b>Nagranie urwało się samo po ' + Math.round(secs) + ' s.</b> ' +
+      (failReason ? 'Powód: ' + esc(failReason) + '. ' : '') +
+      'Materiał do tego momentu jest zapisany - możesz go zapisać niżej.' +
+      (heavy ? '<br>Ustawienia obrazu są ciężkie (' + (set.height || '?') + 'p, ' + S.fps + ' kl/s' +
+               (S.vbr ? ', ' + S.vbr + ' Mb/s' : '') + '). Safari na iPhonie potrafi przy takich przerwać zapis.' : '');
+    $('recFix').style.display = heavy ? 'block' : 'none';
+  }
+  $('recFix').addEventListener('click', () => {
+    S.res = 'fhd'; S.fps = 30; S.vbr = 12; saveSettings();
+    $('selRes').value = 'fhd'; $('selFps').value = '30'; $('selVbr').value = '12';
+    initCamera();
+    $('recFail').classList.remove('show');
+    showToast('Ustawione: 1080p, 30 kl/s, 12 Mb/s');
+  });
 
   function showRecStats(rv, secs){
     const mb = recordedBlob.size / 1048576;
@@ -662,7 +771,21 @@
   bindSelect('selRes','res');
   bindSelect('selFps','fps', true);
   bindSelect('selVbr','vbr', true);
-  bindSelect('selMic','micId');
+  // wybór mikrofonu: przy zewnętrznym trzeba zdjąć przetwarzanie, inaczej iOS wraca na wbudowany
+  (function(){
+    const el = $('selMic');
+    el.addEventListener('change', () => {
+      S.micId = el.value;
+      const m = mics.find(x => x.deviceId === el.value);
+      if (el.value && m && looksExternal(m.label) && !S.raw){
+        S.raw = true;
+        $('tRaw').classList.add('on');
+        showToast('Włączam surowy dźwięk - inaczej iPhone wraca na swój mikrofon');
+      }
+      saveSettings();
+      initCamera();
+    });
+  })();
   (function(){
     [['selPre','preroll'], ['selDelay','delay']].forEach(([id, key]) => {
       const el = $(id);
