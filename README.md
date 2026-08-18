@@ -38,7 +38,14 @@ Synchronizacja idzie w obie strony: przy starcie, po powrocie do apki i po każd
 - Osobne opóźnienie startu tekstu: od razu albo po 1-8 s od rozpoczęcia nagrania (plakietka „tekst za N” w pasku nagrywania)
 - Linie produkcyjne (PRZEBITKA, NA EKRANIE, BÓL, timecody, wtrącenia w nawiasach) wyszarzone i pomijane w liczeniu czasu czytania
 - Nagrywanie obrazu z kamery + dźwięku (bez tekstu w pliku), plik nazwany tytułem skryptu
+- Pilot z komputera (`/remote.html`): START/STOP nagrania, pauza tekstu, prędkość i powrót na początek - telefon może stać na statywie poza zasięgiem ręki
 - Ekran nie gaśnie, działa offline (PWA)
+
+## Pilot
+
+Telefon: Ustawienia → **Pilot z komputera** → włącz sterowanie zdalne, przepisz 6-cyfrowy kod. Komputer: otwórz `/remote.html`, wpisz kod. Komendy latają przez publiczny broker MQTT po WSS (`broker.emqx.io`, awaryjnie mosquitto i hivemq) - bez konta, bez własnego serwera, przez internet, więc urządzenia nie muszą być w jednej sieci. Skróty na klawiaturze: spacja = START/STOP, R = tekst od nowa, P = pauza.
+
+Kanał jest publiczny i chroniony tylko losowym kodem - ktoś, kto go zna, może wystartować nagranie. Nic poza tym nie wychodzi z telefonu: sam materiał nigdzie nie leci, przesyłane są wyłącznie komendy i status (czy nagrywa, ile sekund, nazwa skryptu).
 
 ## Technicznie
 

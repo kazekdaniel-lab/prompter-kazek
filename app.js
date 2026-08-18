@@ -697,6 +697,75 @@
   }
 
   // ======================================================
+  //  Pilot: telefon słucha komend z komputera (MQTT po WSS, bez serwera)
+  // ======================================================
+  const RKEY = 'tp_remote_v1';
+  let R = (function(){ try{ return JSON.parse(localStorage.getItem(RKEY)) || {}; }catch(e){ return {}; } })();
+  if (!R.code) R.code = String(Math.floor(100000 + Math.random() * 900000));
+  R.on = !!R.on;
+  const saveRemote = () => { try{ localStorage.setItem(RKEY, JSON.stringify(R)); }catch(e){} };
+  saveRemote();
+
+  let mq = null, stateT = null;
+  const topicCmd = () => 'prompter/' + R.code + '/cmd';
+  const topicState = () => 'prompter/' + R.code + '/state';
+
+  function remoteUI(status){
+    $('remoteCode').textContent = R.code;
+    $('tRemote').classList.toggle('on', R.on);
+    $('remoteInfo').textContent = !R.on ? 'Wyłączony.'
+      : (status || (mq && mq.connected() ? 'Gotowy - czeka na komendy z komputera.' : 'Łączę...'));
+  }
+
+  function remoteStart(){
+    if (mq) return;
+    mq = TPMqtt.connect({
+      onStatus: (st) => remoteUI(st === 'połączono' ? 'Gotowy - czeka na komendy z komputera.'
+                              : st === 'łączę' ? 'Łączę...' : 'Brak połączenia, próbuję dalej...'),
+      onOpen: () => { mq.subscribe(topicCmd()); sendState(); },
+      onMessage: (t, m) => { if (t === topicCmd()) handleCmd(m); }
+    });
+    clearInterval(stateT);
+    stateT = setInterval(sendState, 1000);
+  }
+  function remoteStop(){
+    clearInterval(stateT); stateT = null;
+    if (mq){ mq.close(); mq = null; }
+    remoteUI();
+  }
+  function sendState(){
+    if (!mq || !mq.connected()) return;
+    const s = currentScript();
+    mq.publish(topicState(), { rec: recording, cnt: counting, t: recording ? Math.floor((performance.now() - recStart) / 1000) : 0,
+                               playing: playing, speed: S.speed, script: (s && s.name) || '', ready: !!stream });
+  }
+  function handleCmd(m){
+    if (!m || !m.c) return;
+    switch (m.c){
+      case 'start':   if (!recording && !counting) startFlow(); break;
+      case 'stop':    if (recording) stopRecording(); else if (counting) cancelled = true; break;
+      case 'toggle':  if (recording) stopRecording(); else if (counting) cancelled = true; else startFlow(); break;
+      case 'restart': restartScroll(); break;
+      case 'play':    setPlaying(!playing); break;
+      case 'speed':   setSpeed(S.speed + (m.v || 0)); break;
+      case 'ping':    break;
+    }
+    sendState();
+  }
+
+  bindToggleRemote();
+  function bindToggleRemote(){
+    remoteUI();
+    $('tRemote').addEventListener('click', () => {
+      R.on = !R.on; saveRemote();
+      if (R.on){ remoteStart(); showToast('Pilot włączony - kod ' + R.code); }
+      else { remoteStop(); showToast('Pilot wyłączony'); }
+      remoteUI();
+    });
+    if (R.on) remoteStart();
+  }
+
+  // ======================================================
   //  Wake Lock (ekran nie gaśnie)
   // ======================================================
   let wl = null;

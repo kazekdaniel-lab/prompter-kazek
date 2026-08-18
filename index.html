@@ -177,6 +177,8 @@
   .syncrow.on .dot{ background:#34c759; }
   .syncrow.err .dot{ background:var(--accent); }
   .syncrow span{ flex:1; }
+  .pin{ font-size:30px; font-weight:800; letter-spacing:.35em; text-align:center; background:#1c1c1c;
+    border-radius:12px; padding:14px 10px 14px 22px; font-variant-numeric:tabular-nums; }
   .sect{ font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:#8a8a8a;
     margin:26px 0 10px; font-weight:700; }
 
@@ -334,6 +336,8 @@
         <option value="3">3 sekundy</option>
         <option value="5">5 sekund</option>
         <option value="10">10 sekund</option>
+        <option value="20">20 sekund</option>
+        <option value="30">30 sekund (czas, żeby dojść do kadru)</option>
       </select></div>
     <div class="frow"><span>Tekst rusza po starcie</span>
       <select id="selDelay">
@@ -348,6 +352,12 @@
     <div class="toggle"><span>Lustrzany podgląd (nagranie zawsze normalne)</span><div class="sw on" id="tMirror"></div></div>
     <div class="toggle"><span>Kamera tylna (zamiast przedniej)</span><div class="sw" id="tBack"></div></div>
     <p class="hint">Tekst jest tylko na ekranie - w nagraniu go nie ma. Nagrywa się sam obraz z kamery i dźwięk, wszystko zostaje na telefonie.</p>
+
+    <div class="sect">Pilot z komputera</div>
+    <div class="toggle"><span>Sterowanie zdalne</span><div class="sw" id="tRemote"></div></div>
+    <p class="hint" id="remoteInfo" style="margin-bottom:10px;">Wyłączony.</p>
+    <div class="pin" id="remoteCode">------</div>
+    <p class="hint">Na komputerze otwórz <a href="./remote.html">pilot</a> i wpisz ten kod. Potem START i STOP klikasz z laptopa, nie dotykając telefonu.</p>
 
     <div class="sect">Chmura ze skryptami</div>
     <p class="hint" id="cloudStatus" style="margin-bottom:12px;">Nie połączono. Skrypty są tylko na tym telefonie.</p>
@@ -376,6 +386,7 @@
   <div id="backdrop"></div>
 </div>
 
+<script src="./mqtt.js?v=13"></script>
 <script src="./store.js?v=13"></script>
 <script src="./app.js?v=13"></script>
 </body>

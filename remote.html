@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompter - pilot</title>
+<meta name="theme-color" content="#0d0d0d">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<style>
+  :root{ --bg:#0d0d0d; --panel:#161616; --line:#282828; --txt:#f2f2f2; --dim:#8d8d8d;
+         --accent:#ff3b30; --ok:#34c759; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  body{ display:flex; align-items:center; justify-content:center; padding:24px; }
+  .box{ width:min(460px,100%); }
+  h1{ font-size:16px; font-weight:800; letter-spacing:.4px; margin:0 0 18px; }
+  h1 span{ color:var(--accent); }
+  .chip{ display:inline-flex; align-items:center; gap:8px; background:#1c1c1c; border:1px solid var(--line);
+    border-radius:20px; padding:7px 14px; font-size:12.5px; color:var(--dim); margin-bottom:18px; }
+  .chip .dot{ width:8px; height:8px; border-radius:50%; background:#666; }
+  .chip.on .dot{ background:var(--ok); }
+  .chip.rec .dot{ background:var(--accent); animation:blink 1s steps(1) infinite; }
+  @keyframes blink{ 50%{ opacity:.2 } }
+  input{ width:100%; background:#1c1c1c; border:1px solid var(--line); border-radius:12px; color:#fff;
+    padding:16px; font-size:26px; text-align:center; letter-spacing:.3em; font-weight:700;
+    font-variant-numeric:tabular-nums; font-family:inherit; }
+  .big{ width:100%; border:none; border-radius:16px; padding:26px; font-size:20px; font-weight:800;
+    background:var(--accent); color:#fff; margin:14px 0 10px; cursor:pointer; font-family:inherit; }
+  .big.stop{ background:#2b2b2b; }
+  .big:active{ opacity:.75; }
+  .big:disabled{ opacity:.35; cursor:default; }
+  .row{ display:flex; gap:10px; }
+  .row button{ flex:1; background:#1c1c1c; border:1px solid var(--line); color:var(--txt); border-radius:12px;
+    padding:14px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; }
+  .row button:hover{ background:#242424; }
+  .stat{ display:flex; justify-content:space-between; font-size:13px; color:var(--dim);
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:13px 15px; margin-top:14px; }
+  .stat b{ color:var(--txt); font-variant-numeric:tabular-nums; }
+  p.hint{ color:#7d7d7d; font-size:12.5px; line-height:1.6; margin-top:16px; }
+  .rec-time{ font-size:34px; font-weight:800; text-align:center; font-variant-numeric:tabular-nums;
+    margin:6px 0 2px; }
+  .rec-time.off{ color:#3a3a3a; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>PROMPT<span>ER</span> · pilot</h1>
+  <div class="chip" id="chip"><span class="dot"></span><span id="chipTxt">Podaj kod z telefonu</span></div>
+
+  <input id="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="off">
+
+  <div class="rec-time off" id="time">0:00</div>
+  <button class="big" id="btnRec" disabled>START</button>
+  <div class="row">
+    <button id="btnRestart">Tekst od nowa</button>
+    <button id="btnPlay">Pauza / dalej</button>
+  </div>
+  <div class="row" style="margin-top:10px;">
+    <button id="btnSlow">− wolniej</button>
+    <button id="btnFast">+ szybciej</button>
+  </div>
+
+  <div class="stat"><span id="scriptName">-</span><b id="speed">-</b></div>
+  <p class="hint">Kod bierzesz z telefonu: Ustawienia → Pilot z komputera. Telefon musi mieć włączone sterowanie zdalne i otwartą apkę na ekranie. Działa przez internet, więc laptop i telefon nie muszą być w tej samej sieci.</p>
+</div>
+
+<script src="./mqtt.js?v=13"></script>
+<script src="./remote.js?v=13"></script>
+</body>
+</html>
