@@ -189,11 +189,6 @@
       linear-gradient(135deg,#888 50%,transparent 50%);
     background-position:calc(100% - 17px) 50%, calc(100% - 12px) 50%;
     background-size:5px 5px, 5px 5px; background-repeat:no-repeat; }
-  /* wskaźnik poziomu dźwięku */
-  .meter{ height:8px; border-radius:4px; background:#262626; overflow:hidden; margin-top:16px; }
-  .meter i{ display:block; height:100%; width:0%; border-radius:4px; background:#34c759;
-    transition:width .06s linear; }
-  .meter i.hot{ background:var(--accent); }
 
   /* review */
   #reviewVid{ width:100%; border-radius:14px; background:#000; max-height:52dvh; margin-bottom:14px; }
@@ -310,7 +305,7 @@
       <input type="range" id="rOpac" min="0" max="90" step="1"></div>
     <div class="row"><div class="head"><span>Zoom kamery</span><b id="vZoom">1.0×</b></div>
       <input type="range" id="rZoom" min="1" max="3" step="0.1"></div>
-    <div class="sect">Obraz i dźwięk</div>
+    <div class="sect">Obraz</div>
     <p class="hint" id="camInfo" style="margin:0 0 14px;">Sprawdzam kamerę...</p>
 
     <div class="frow"><span>Jakość obrazu</span>
@@ -332,15 +327,6 @@
         <option value="20">20 Mb/s (bardzo wysoka)</option>
         <option value="30">30 Mb/s (maks.)</option>
       </select></div>
-    <div class="frow"><span>Mikrofon</span>
-      <select id="selMic"><option value="">Systemowy (domyślny)</option></select></div>
-
-    <div class="meter"><i id="meterBar"></i></div>
-    <p class="hint" id="micInfo" style="margin-top:6px;">Powiedz coś - pasek pokaże, który mikrofon łapie dźwięk.</p>
-    <button class="btn" id="micReload" style="margin-top:10px;">Przeładuj mikrofon (po podpięciu DJI / Rode)</button>
-    <p class="hint">Podpięty mikrofon (DJI, Rode) apka wybiera sama, bez ruszania jego ustawień - dźwięk idzie surowy, tak jak go ustawisz na mikroporcie. Gdyby iPhone nie zauważył podpięcia, tapnij przycisk powyżej.</p>
-
-
     <div class="sect">Start nagrania</div>
     <div class="frow"><span>Odliczanie przed startem</span>
       <select id="selPre">
@@ -390,7 +376,7 @@
   <div id="backdrop"></div>
 </div>
 
-<script src="./store.js?v=12"></script>
-<script src="./app.js?v=12"></script>
+<script src="./store.js?v=13"></script>
+<script src="./app.js?v=13"></script>
 </body>
 </html>

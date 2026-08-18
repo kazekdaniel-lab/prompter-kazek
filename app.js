@@ -16,7 +16,7 @@
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
   const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, mirror:true, back:false,
-                     res:'fhd', fps:30, vbr:0, micId:'', preroll:3, delay:0 };
+                     res:'fhd', fps:30, vbr:0, preroll:3, delay:0 };
   let S = load(SET_KEY, defaults);
   // stary przełącznik odliczania -> nowe ustawienie w sekundach (jednorazowo)
   if (typeof S.countdown === 'boolean'){ S.preroll = S.countdown ? 3 : 0; delete S.countdown; save(SET_KEY, S); }
@@ -49,15 +49,9 @@
     return { facingMode: S.back ? 'environment' : 'user',
              width:{ ideal:d.w }, height:{ ideal:d.h }, frameRate:{ ideal:S.fps } };
   }
-  /* Dźwięk bierzemy tak, jak przychodzi z mikrofonu - żadnego przetwarzania po naszej
-     stronie (echo, szumy, AGC). Poziomy i reszta zostają ustawione na samym mikroporcie. */
-  function audioConstraints(withDevice){
-    const a = { echoCancellation:false, noiseSuppression:false, autoGainControl:false,
-                sampleRate: { ideal: 48000 } };
-    const id = withDevice ? desiredMicId() : '';
-    if (id) a.deviceId = { exact: id };
-    return a;
-  }
+  /* Dźwięk bierzemy dokładnie taki, jaki daje wpięty mikrofon. Wyłączone jest wyłącznie
+     przetwarzanie systemu (echo, szumy, AGC) - poza tym apka nie dotyka niczego. */
+  const AUDIO = { echoCancellation:false, noiseSuppression:false, autoGainControl:false };
 
   let camBusy = false;
   async function initCamera(){
@@ -65,23 +59,13 @@
     camBusy = true;
     stopStream();
     try{
-      try{
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(true), video: videoConstraints() });
-      }catch(e1){
-        // wybrany mikrofon zniknął (odłączony) - wracamy na systemowy
-        if (S.micId){ S.micId = ''; saveSettings();
-          stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(false), video: videoConstraints() });
-          showToast('Wybrany mikrofon jest niedostępny - wracam na systemowy');
-        } else throw e1;
-      }
+      stream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO, video: videoConstraints() });
       cam.srcObject = stream;
       detectZoom();
       applyZoom();
       camMsg.classList.remove('show');
       await cam.play().catch(()=>{});
-      await refreshMics();
       updateMediaInfo();
-      if (openId === 'settingsSheet') startMeter();
     }catch(err){
       camMsg.classList.add('show');
       camMsgText.textContent = errText(err);
@@ -89,26 +73,21 @@
     }finally{ camBusy = false; }
   }
 
-  /* Zmiana mikrofonu nie może ruszać obrazu - podmieniamy
-     samą ścieżkę audio w istniejącym strumieniu, obraz leci bez mrugnięcia. */
-  async function swapAudio(){
-    if (!stream || recording) return initCamera();
+  /* Wpięcie mikrofonu w trakcie pracy nie przełącza trasy audio samo z siebie.
+     Bierzemy wtedy ścieżkę dźwięku od nowa - obraz zostaje nietknięty. */
+  async function refreshAudio(){
+    if (!stream || recording) return;
     try{
-      const fresh = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(true) });
+      const fresh = await navigator.mediaDevices.getUserMedia({ audio: AUDIO });
       const nt = fresh.getAudioTracks()[0];
       if (!nt) return;
-      stopMeter();
       stream.getAudioTracks().forEach(t => { stream.removeTrack(t); t.stop(); });
       stream.addTrack(nt);
-      await refreshMics();
       updateMediaInfo();
-      if (openId === 'settingsSheet') startMeter();
-    }catch(err){
-      if (S.micId){ S.micId = ''; saveSettings(); showToast('Ten mikrofon jest niedostępny'); }
-      initCamera();
-    }
+    }catch(e){}
   }
-  function stopStream(){ stopMeter(); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
+
+  function stopStream(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } }
   function errText(err){
     const n = err && err.name;
     if (n === 'NotAllowedError' || n === 'SecurityError')
@@ -156,67 +135,9 @@
   // ======================================================
   //  Co realnie leci do pliku: rozdzielczość, klatki, mikrofon
   // ======================================================
-  let mics = [];
-  async function refreshMics(){
-    try{
-      const devs = await navigator.mediaDevices.enumerateDevices();
-      mics = devs.filter(d => d.kind === 'audioinput');
-    }catch(e){ mics = []; }
-    const sel = $('selMic'), cur = S.micId;
-    sel.innerHTML = '<option value="">Automatycznie (podpięty mikrofon)</option>';
-    mics.forEach((m, i) => {
-      const o = document.createElement('option');
-      o.value = m.deviceId;
-      o.textContent = m.label || ('Mikrofon ' + (i + 1));
-      sel.appendChild(o);
-    });
-    sel.value = mics.some(m => m.deviceId === cur) ? cur : '';
-    ensureMic();
-  }
-
-  /* iOS przy włączonym przetwarzaniu dźwięku (echo/szumy/AGC) trzyma się wbudowanego
-     mikrofonu i ignoruje podpięty zewnętrzny. Dlatego przy zewnętrznym wchodzi tryb surowy. */
-  function looksExternal(label){
-    const l = String(label || '').toLowerCase();
-    if (!l) return false;
-    return !/iphone|ipad|macbook|wbudowan|built-?in|domy[sś]ln|default|airpods|s[lł]uchawk|headphone/.test(l);
-  }
-  /* Podpięty mikrofon (DJI, Rode, cokolwiek poza wbudowanym) jest wybierany sam,
-     przy każdym podłączeniu. Po odpięciu wracamy na wejście systemowe. */
-  function desiredMicId(){
-    if (S.micId) return S.micId;                      // ręczny wybór z listy
-    const ext = mics.find(m => looksExternal(m.label));
-    return ext ? ext.deviceId : '';
-  }
-  function activeMicId(){
-    const at = stream && stream.getAudioTracks()[0];
-    const st = (at && at.getSettings) ? at.getSettings() : {};
-    return st.deviceId || '';
-  }
-  let micBusy = false;
-  async function ensureMic(quiet){
-    if (recording || micBusy || !stream) return;
-    const want = desiredMicId();
-    const have = activeMicId();
-    const zniknal = have && mics.length && !mics.some(m => m.deviceId === have);
-    if (S.micId && zniknal){ S.micId = ''; saveSettings(); }   // ręczny wybór odpięty
-    if (want === have) return;
-    if (!want && !zniknal) return;      // brak listy urządzeń - trasę zostawiamy systemowi
-    micBusy = true;
-    try{
-      await swapAudio();
-      $('selMic').value = S.micId || '';
-      if (!quiet) showToast('Mikrofon: ' + micLabel());
-    } finally { micBusy = false; }
-  }
-
   function micLabel(){
     const at = stream && stream.getAudioTracks()[0];
-    if (!at) return 'brak';
-    if (at.label) return at.label;
-    const id = (at.getSettings && at.getSettings().deviceId) || '';
-    const m = mics.find(x => x.deviceId === id);
-    return (m && m.label) || 'systemowy';
+    return (at && at.label) || 'systemowy';
   }
 
   function updateMediaInfo(){
@@ -227,59 +148,7 @@
     const fps = s.frameRate ? ' @ ' + Math.round(s.frameRate) + ' kl/s' : '';
     const vbr = S.vbr ? S.vbr + ' Mb/s' : 'automatyczna';
     $('camInfo').innerHTML = 'Nagrywa: <b>' + px + fps + '</b> · zapis ' + vbr +
-      '<br>Mikrofon: <b>' + esc(micLabel()) + '</b>' +
-      ' · bez przetwarzania (ustawienia po stronie mikrofonu)';
-    const at = stream.getAudioTracks()[0];
-    const as = at && at.getSettings ? at.getSettings() : {};
-    $('micInfo').textContent = 'Powiedz coś - pasek pokaże, który mikrofon łapie dźwięk.' +
-      (as.sampleRate ? ' Próbkowanie ' + Math.round(as.sampleRate / 1000) + ' kHz.' : '');
-  }
-
-  // Wskaźnik poziomu dźwięku - dowód, że nagrywa się właściwy mikrofon
-  let actx = null, analyser = null, meterRaf = null, meterOn = false, meterSrc = null;
-  function startMeter(){
-    if (!stream || meterOn || recording) return;   // w trakcie nagrania nie dotykamy ścieżki audio
-    try{
-      if (!actx || actx.state === 'closed') actx = new (window.AudioContext || window.webkitAudioContext)();
-      if (actx.state === 'suspended') actx.resume().catch(()=>{});
-      meterSrc = actx.createMediaStreamSource(stream);
-      analyser = actx.createAnalyser();
-      analyser.fftSize = 1024;
-      meterSrc.connect(analyser);
-      const buf = new Uint8Array(analyser.fftSize);
-      const bar = $('meterBar');
-      meterOn = true;
-      const loop = () => {
-        if (!meterOn) return;
-        analyser.getByteTimeDomainData(buf);
-        let peak = 0;
-        for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i] - 128) / 128);
-        const pct = Math.min(100, Math.round(peak * 140));
-        bar.style.width = pct + '%';
-        bar.classList.toggle('hot', pct > 88);
-        meterRaf = requestAnimationFrame(loop);
-      };
-      loop();
-    }catch(e){ meterOn = false; }
-  }
-  /* Pełne zamknięcie: sam AudioContext wiszący na strumieniu potrafi na iOS
-     przerwać sesję audio w trakcie nagrywania. */
-  function stopMeter(hard){
-    meterOn = false;
-    if (meterRaf) cancelAnimationFrame(meterRaf);
-    meterRaf = null;
-    try{ if (meterSrc) meterSrc.disconnect(); }catch(e){}
-    try{ if (analyser) analyser.disconnect(); }catch(e){}
-    meterSrc = null; analyser = null;
-    // przy nagrywaniu zamykamy kontekst do końca, poza tym tylko usypiamy
-    // (ciągłe zamykanie i otwieranie przestawia sesję audio i mruga obrazem)
-    try{
-      if (actx && actx.state !== 'closed'){
-        if (hard){ actx.close(); actx = null; }
-        else actx.suspend();
-      }
-    }catch(e){}
-    const bar = $('meterBar'); if (bar) bar.style.width = '0%';
+      '<br>Dźwięk: <b>' + esc(micLabel()) + '</b>';
   }
 
   // ======================================================
@@ -456,7 +325,6 @@
     recorder.onstop = onRecStop;
     recorder.onerror = (e) => failRec('koder zgłosił błąd (' + ((e && e.error && e.error.name) || 'nieznany') + ')');
     watchTracks();
-    stopMeter(true);             // żaden AudioContext nie może wisieć na strumieniu w trakcie nagrania
     failReason = '';
     // timeslice: dane spływają co sekundę zamiast rosnąć w pamięci jednym kawałkiem
     // (bez tego Safari na iOS potrafi uciąć dłuższe nagranie)
@@ -602,10 +470,10 @@
   let openId = null;
   function openSheet(id){ if(openId) $(openId).classList.remove('open');
     openId = id; $(id).classList.add('open'); backdrop.classList.add('show'); }
-  function closeSheet(){ if(openId) $(openId).classList.remove('open'); openId=null; backdrop.classList.remove('show'); stopMeter(); }
+  function closeSheet(){ if(openId) $(openId).classList.remove('open'); openId=null; backdrop.classList.remove('show'); }
   backdrop.addEventListener('click', closeSheet);
   document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheet));
-  $('btnSettings').addEventListener('click', () => { openSheet('settingsSheet'); updateMediaInfo(); startMeter(); });
+  $('btnSettings').addEventListener('click', () => { openSheet('settingsSheet'); updateMediaInfo(); });
   $('btnScripts').addEventListener('click', () => { renderScriptList(); hideEditor(); openSheet('scriptsSheet'); });
 
   // ======================================================
@@ -802,62 +670,29 @@
   bindToggle('tMirror','mirror', applyCamTransform);
   bindToggle('tBack','back', () => initCamera());
 
-  /* Podpięcie mikrofonu przy otwartej apce nie przełącza trasy audio samo z siebie -
-     ten przycisk bierze wejście od nowa, nie ruszając obrazu. */
-  $('micReload').addEventListener('click', async () => {
-    if (recording){ showToast('Nie w trakcie nagrania'); return; }
-    const before = micLabel();
-    showToast('Przeładowuję mikrofon...');
-    await swapAudio();
-    const after = micLabel();
-    showToast(after && after !== before ? 'Teraz: ' + after : 'Wejście: ' + after + ' - sprawdź pasek');
-  });
-
-  function bindSelect(id, key, num){
+  // Listy w ustawieniach: obraz i start nagrania
+  function bindSelect(id, key, num, onChange){
     const el = $(id);
-    el.value = num ? String(S[key]) : S[key];
+    if (!el) return;
+    el.value = String(S[key]);
     el.addEventListener('change', () => {
-      S[key] = num ? parseFloat(el.value) : el.value;
+      S[key] = num ? (parseFloat(el.value) || 0) : el.value;
       saveSettings();
-      if (key === 'vbr') updateMediaInfo();
-      else initCamera();
+      if (onChange) onChange();
     });
   }
-  bindSelect('selRes','res');
-  bindSelect('selFps','fps', true);
-  bindSelect('selVbr','vbr', true);
-  // wybór mikrofonu: przy zewnętrznym trzeba zdjąć przetwarzanie, inaczej iOS wraca na wbudowany
-  (function(){
-    const el = $('selMic');
-    el.addEventListener('change', () => {
-      S.micId = el.value;
-      const m = mics.find(x => x.deviceId === el.value);
-      saveSettings();
-      swapAudio();
-    });
-  })();
-  (function(){
-    [['selPre','preroll'], ['selDelay','delay']].forEach(([id, key]) => {
-      const el = $(id);
-      el.value = String(S[key]);
-      el.addEventListener('change', () => { S[key] = parseInt(el.value, 10) || 0; saveSettings(); });
-    });
-  })();
+  bindSelect('selRes','res', false, () => initCamera());
+  bindSelect('selFps','fps', true, () => initCamera());
+  bindSelect('selVbr','vbr', true, updateMediaInfo);
+  bindSelect('selPre','preroll', true);
+  bindSelect('selDelay','delay', true);
 
-  // podłączenie/odłączenie mikrofonu w trakcie - odśwież listę
-  // iOS lubi sypać tym zdarzeniem seriami - stąd opóźnienie i porównanie listy
+  // Wpięcie/odpięcie mikroportu: po cichu bierzemy nowe wejście, bez pytania i bez komunikatów
   if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices){
-    let devT = null, lastIds = '';
+    let devT = null;
     navigator.mediaDevices.addEventListener('devicechange', () => {
       clearTimeout(devT);
-      devT = setTimeout(async () => {
-        if (recording) return;
-        await refreshMics();
-        const ids = mics.map(m => m.deviceId).join(',');
-        if (ids === lastIds) return;
-        lastIds = ids;
-        updateMediaInfo();
-      }, 600);
+      devT = setTimeout(() => { if (!recording) refreshAudio(); }, 600);
     });
   }
 
