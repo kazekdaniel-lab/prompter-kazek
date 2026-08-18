@@ -16,14 +16,8 @@
   // ---- Ustawienia (localStorage) ----
   const SET_KEY = 'tp_settings_v1';
   const defaults = { speed:70, font:42, panel:55, width:92, opac:50, zoom:1, mirror:true, back:false,
-                     res:'fhd', fps:30, vbr:0, micId:'', raw:true, preroll:3, delay:0 };
+                     res:'fhd', fps:30, vbr:0, micId:'', preroll:3, delay:0 };
   let S = load(SET_KEY, defaults);
-  // iOS z włączonym przetwarzaniem dźwięku (echo/szumy/AGC) ignoruje podpięty
-  // mikrofon i nagrywa wbudowanym - dlatego surowy dźwięk wchodzi na stałe jako domyślny
-  if (!localStorage.getItem('tp_raw_default_v2')){
-    localStorage.setItem('tp_raw_default_v2', '1');
-    S.raw = true; save(SET_KEY, S);
-  }
   // stary przełącznik odliczania -> nowe ustawienie w sekundach (jednorazowo)
   if (typeof S.countdown === 'boolean'){ S.preroll = S.countdown ? 3 : 0; delete S.countdown; save(SET_KEY, S); }
 
@@ -55,11 +49,13 @@
     return { facingMode: S.back ? 'environment' : 'user',
              width:{ ideal:d.w }, height:{ ideal:d.h }, frameRate:{ ideal:S.fps } };
   }
+  /* Dźwięk bierzemy tak, jak przychodzi z mikrofonu - żadnego przetwarzania po naszej
+     stronie (echo, szumy, AGC). Poziomy i reszta zostają ustawione na samym mikroporcie. */
   function audioConstraints(withDevice){
-    // przy zewnętrznym mikrofonie przetwarzanie potrafi zjeść dynamikę - stąd tryb surowy
-    const a = { echoCancellation: !S.raw, noiseSuppression: !S.raw, autoGainControl: !S.raw,
-                channelCount: { ideal: 1 }, sampleRate: { ideal: 48000 } };
-    if (withDevice && S.micId) a.deviceId = { exact: S.micId };
+    const a = { echoCancellation:false, noiseSuppression:false, autoGainControl:false,
+                sampleRate: { ideal: 48000 } };
+    const id = withDevice ? desiredMicId() : '';
+    if (id) a.deviceId = { exact: id };
     return a;
   }
 
@@ -93,7 +89,7 @@
     }finally{ camBusy = false; }
   }
 
-  /* Zmiana mikrofonu albo trybu surowego nie może ruszać obrazu - podmieniamy
+  /* Zmiana mikrofonu nie może ruszać obrazu - podmieniamy
      samą ścieżkę audio w istniejącym strumieniu, obraz leci bez mrugnięcia. */
   async function swapAudio(){
     if (!stream || recording) return initCamera();
@@ -167,7 +163,7 @@
       mics = devs.filter(d => d.kind === 'audioinput');
     }catch(e){ mics = []; }
     const sel = $('selMic'), cur = S.micId;
-    sel.innerHTML = '<option value="">Systemowy (domyślny)</option>';
+    sel.innerHTML = '<option value="">Automatycznie (podpięty mikrofon)</option>';
     mics.forEach((m, i) => {
       const o = document.createElement('option');
       o.value = m.deviceId;
@@ -175,7 +171,7 @@
       sel.appendChild(o);
     });
     sel.value = mics.some(m => m.deviceId === cur) ? cur : '';
-    autoPickExternal();
+    ensureMic();
   }
 
   /* iOS przy włączonym przetwarzaniu dźwięku (echo/szumy/AGC) trzyma się wbudowanego
@@ -185,23 +181,33 @@
     if (!l) return false;
     return !/iphone|ipad|macbook|wbudowan|built-?in|domy[sś]ln|default|airpods|s[lł]uchawk|headphone/.test(l);
   }
-  let autoMicDone = false;
-  function autoPickExternal(){
-    if (autoMicDone || recording) return;
-    autoMicDone = true;
-    if (S.micId) return;
-    // iOS często pokazuje tylko jedno wejście i sam wybiera trasę - wtedy nic nie wymuszamy,
-    // liczy się wyłącznie wyłączone przetwarzanie dźwięku
-    if (mics.length < 2) return;
+  /* Podpięty mikrofon (DJI, Rode, cokolwiek poza wbudowanym) jest wybierany sam,
+     przy każdym podłączeniu. Po odpięciu wracamy na wejście systemowe. */
+  function desiredMicId(){
+    if (S.micId) return S.micId;                      // ręczny wybór z listy
     const ext = mics.find(m => looksExternal(m.label));
-    if (!ext) return;
-    S.micId = ext.deviceId;
-    S.raw = true;                       // bez tego iOS i tak weźmie wbudowany
-    saveSettings();
-    $('tRaw').classList.add('on');
-    $('selMic').value = ext.deviceId;
-    showToast('Wykryto mikrofon: ' + ext.label);
-    swapAudio();
+    return ext ? ext.deviceId : '';
+  }
+  function activeMicId(){
+    const at = stream && stream.getAudioTracks()[0];
+    const st = (at && at.getSettings) ? at.getSettings() : {};
+    return st.deviceId || '';
+  }
+  let micBusy = false;
+  async function ensureMic(quiet){
+    if (recording || micBusy || !stream) return;
+    const want = desiredMicId();
+    const have = activeMicId();
+    const zniknal = have && mics.length && !mics.some(m => m.deviceId === have);
+    if (S.micId && zniknal){ S.micId = ''; saveSettings(); }   // ręczny wybór odpięty
+    if (want === have) return;
+    if (!want && !zniknal) return;      // brak listy urządzeń - trasę zostawiamy systemowi
+    micBusy = true;
+    try{
+      await swapAudio();
+      $('selMic').value = S.micId || '';
+      if (!quiet) showToast('Mikrofon: ' + micLabel());
+    } finally { micBusy = false; }
   }
 
   function micLabel(){
@@ -222,7 +228,7 @@
     const vbr = S.vbr ? S.vbr + ' Mb/s' : 'automatyczna';
     $('camInfo').innerHTML = 'Nagrywa: <b>' + px + fps + '</b> · zapis ' + vbr +
       '<br>Mikrofon: <b>' + esc(micLabel()) + '</b>' +
-      (S.raw ? ' · przetwarzanie wyłączone' : ' · <span style="color:#e0b48b">przetwarzanie włączone (iPhone może ignorować zewnętrzny mikrofon)</span>');
+      ' · bez przetwarzania (ustawienia po stronie mikrofonu)';
     const at = stream.getAudioTracks()[0];
     const as = at && at.getSettings ? at.getSettings() : {};
     $('micInfo').textContent = 'Powiedz coś - pasek pokaże, który mikrofon łapie dźwięk.' +
@@ -795,13 +801,11 @@
   }
   bindToggle('tMirror','mirror', applyCamTransform);
   bindToggle('tBack','back', () => initCamera());
-  bindToggle('tRaw','raw', () => swapAudio());
 
   /* Podpięcie mikrofonu przy otwartej apce nie przełącza trasy audio samo z siebie -
      ten przycisk bierze wejście od nowa, nie ruszając obrazu. */
   $('micReload').addEventListener('click', async () => {
     if (recording){ showToast('Nie w trakcie nagrania'); return; }
-    autoMicDone = false;
     const before = micLabel();
     showToast('Przeładowuję mikrofon...');
     await swapAudio();
@@ -828,11 +832,6 @@
     el.addEventListener('change', () => {
       S.micId = el.value;
       const m = mics.find(x => x.deviceId === el.value);
-      if (el.value && m && looksExternal(m.label) && !S.raw){
-        S.raw = true;
-        $('tRaw').classList.add('on');
-        showToast('Włączam surowy dźwięk - inaczej iPhone wraca na swój mikrofon');
-      }
       saveSettings();
       swapAudio();
     });
