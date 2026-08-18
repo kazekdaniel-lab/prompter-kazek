@@ -32,9 +32,9 @@ Synchronizacja idzie w obie strony: przy starcie, po powrocie do apki i po każd
 - Przewijany tekst przy obiektywie, regulacja prędkości (także w trakcie nagrania)
 - Regulacja czcionki, wysokości panelu, szerokości tekstu, krycia tła, zoom kamery
 - Ustawienia jakości: rozdzielczość (maks. dostępna / 1080p / 720p), 30 lub 60 klatek, bitrate do 30 Mb/s, dźwięk 192 kb/s
-- Wybór mikrofonu (łapie zewnętrzne), tryb surowego dźwięku bez redukcji szumów i AGC, wskaźnik poziomu + podgląd realnych parametrów nagrania
+- Dźwięk bez żadnej obróbki po stronie apki; wpięty mikroport (DJI, Rode) wybierany automatycznie
 - Wiele zapisanych skryptów (intro, outro, oferta...), edytowalnych i na telefonie, i na komputerze
-- Odliczanie przed startem: bez / 3 / 5 / 10 s, przerywane tapnięciem w czerwony przycisk
+- Odliczanie przed startem: bez / 3 / 5 / 10 / 20 / 30 s, przerywane tapnięciem w czerwony przycisk
 - Osobne opóźnienie startu tekstu: od razu albo po 1-8 s od rozpoczęcia nagrania (plakietka „tekst za N” w pasku nagrywania)
 - Linie produkcyjne (PRZEBITKA, NA EKRANIE, BÓL, timecody, wtrącenia w nawiasach) wyszarzone i pomijane w liczeniu czasu czytania
 - Nagrywanie obrazu z kamery + dźwięku (bez tekstu w pliku), plik nazwany tytułem skryptu
