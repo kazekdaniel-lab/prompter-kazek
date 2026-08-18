@@ -3,10 +3,13 @@
 (function (global) {
   'use strict';
 
+  // Kolejność ma znaczenie: pierwszy chodzi na porcie 443, który przepuszcza
+  // każda sieć komórkowa i firmowa. Reszta to zapas na nietypowe porty.
   const BROKERS = [
+    'wss://mqtt.eclipseprojects.io/mqtt',
     'wss://broker.emqx.io:8084/mqtt',
-    'wss://test.mosquitto.org:8081/mqtt',
-    'wss://broker.hivemq.com:8884/mqtt'
+    'wss://broker.hivemq.com:8884/mqtt',
+    'wss://test.mosquitto.org:8081/mqtt'
   ];
 
   function enc(str){ return new TextEncoder().encode(str); }
@@ -23,14 +26,20 @@
   function connect(opts){
     const onMsg = opts.onMessage || (() => {});
     const onUp = opts.onStatus || (() => {});
-    let ws = null, ping = null, alive = false, closed = false, tries = 0, subs = [];
+    let ws = null, ping = null, guard = null, alive = false, closed = false, tries = 0, subs = [];
 
     function open(){
       if (closed) return;
       const url = BROKERS[tries % BROKERS.length];
-      onUp('łączę');
+      const host = url.split('/')[2];
+      onUp('łączę (' + host + ')');
       try{ ws = new WebSocket(url, 'mqtt'); }catch(e){ retry(); return; }
       ws.binaryType = 'arraybuffer';
+
+      // broker, który przyjmie WebSocket, ale nie odpowie na CONNECT, blokowałby pilota
+      // w nieskończoność - stąd twardy limit i skok do następnego z listy
+      clearTimeout(guard);
+      guard = setTimeout(() => { if (!alive){ try{ ws.close(); }catch(e){} } }, 4000);
 
       ws.onopen = () => {
         const id = 'prm' + Math.random().toString(16).slice(2, 10);
@@ -41,6 +50,7 @@
         const d = new Uint8Array(e.data);
         const type = d[0] >> 4;
         if (type === 2){                       // CONNACK
+          clearTimeout(guard);
           alive = true; tries = 0; onUp('połączono');
           subs.forEach(t => sub(t));
           clearInterval(ping);
@@ -56,7 +66,7 @@
           try{ onMsg(topic, JSON.parse(body)); }catch(err){ onMsg(topic, body); }
         }
       };
-      ws.onclose = () => { alive = false; clearInterval(ping); onUp('rozłączono'); retry(); };
+      ws.onclose = () => { alive = false; clearTimeout(guard); clearInterval(ping); onUp('zerwane (' + host + ')'); retry(); };
       ws.onerror = () => { try{ ws.close(); }catch(e){} };
     }
     function retry(){
@@ -78,7 +88,7 @@
         catch(e){ return false; }
       },
       connected(){ return alive; },
-      close(){ closed = true; clearInterval(ping); try{ ws.close(); }catch(e){} }
+      close(){ closed = true; clearTimeout(guard); clearInterval(ping); try{ ws.close(); }catch(e){} }
     };
   }
 

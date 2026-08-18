@@ -710,18 +710,22 @@
   const topicCmd = () => 'prompter/' + R.code + '/cmd';
   const topicState = () => 'prompter/' + R.code + '/state';
 
+  let lastStatus = '';
   function remoteUI(status){
-    $('remoteCode').textContent = R.code;
-    $('tRemote').classList.toggle('on', R.on);
-    $('remoteInfo').textContent = !R.on ? 'Wyłączony.'
-      : (status || (mq && mq.connected() ? 'Gotowy - czeka na komendy z komputera.' : 'Łączę...'));
+    if (status) lastStatus = status;
+    const code = $('remoteCode'), sw = $('tRemote'), info = $('remoteInfo');
+    if (!code || !sw || !info) return;          // starsza wersja strony - nie wywracamy apki
+    code.textContent = R.code;
+    sw.classList.toggle('on', R.on);
+    info.textContent = !R.on ? 'Wyłączony.'
+      : (mq && mq.connected() ? 'Połączony - czeka na komendy. Kod wpisz w pilocie na komputerze.'
+                              : (lastStatus || 'Łączę...'));
   }
 
   function remoteStart(){
-    if (mq) return;
+    if (mq || !window.TPMqtt || !R.on) return;
     mq = TPMqtt.connect({
-      onStatus: (st) => remoteUI(st === 'połączono' ? 'Gotowy - czeka na komendy z komputera.'
-                              : st === 'łączę' ? 'Łączę...' : 'Brak połączenia, próbuję dalej...'),
+      onStatus: (st) => remoteUI(st),
       onOpen: () => { mq.subscribe(topicCmd()); sendState(); },
       onMessage: (t, m) => { if (t === topicCmd()) handleCmd(m); }
     });
@@ -756,13 +760,33 @@
   bindToggleRemote();
   function bindToggleRemote(){
     remoteUI();
-    $('tRemote').addEventListener('click', () => {
+    const sw = $('tRemote');
+    if (!sw) return;
+    sw.addEventListener('click', async () => {
       R.on = !R.on; saveRemote();
-      if (R.on){ remoteStart(); showToast('Pilot włączony - kod ' + R.code); }
-      else { remoteStop(); showToast('Pilot wyłączony'); }
-      remoteUI();
+      remoteUI();                          // przełącznik reaguje od razu, zanim ruszy sieć
+      if (!R.on){ remoteStop(); showToast('Pilot wyłączony'); return; }
+      showToast('Pilot włączony - kod ' + R.code);
+      try{
+        await ensureMqtt();
+        remoteStart();
+      }catch(err){
+        remoteUI('Nie udało się wczytać pilota - odśwież apkę');
+      }
     });
-    if (R.on) remoteStart();
+    if (R.on) ensureMqtt().then(remoteStart).catch(() => remoteUI('Brak pliku pilota - odśwież apkę'));
+  }
+
+  /* Gdyby mqtt.js nie zdążył się wczytać (stary cache), dociągamy go w locie. */
+  function ensureMqtt(){
+    if (window.TPMqtt) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const sc = document.createElement('script');
+      sc.src = './mqtt.js?v=' + Date.now();
+      sc.onload = () => window.TPMqtt ? res() : rej(new Error('brak TPMqtt'));
+      sc.onerror = () => rej(new Error('nie pobrano mqtt.js'));
+      document.head.appendChild(sc);
+    });
   }
 
   // ======================================================

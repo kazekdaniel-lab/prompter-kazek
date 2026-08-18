@@ -18,14 +18,21 @@
     if (mq) mq.close();
     setChip('łączę z brokerem...', '');
     mq = TPMqtt.connect({
-      onStatus: (st) => { if (st !== 'połączono') setChip(st === 'łączę' ? 'łączę...' : 'brak połączenia', ''); },
-      onOpen: () => { mq.subscribe('prompter/' + code + '/state'); send('ping'); setChip('czekam na telefon...', ''); },
+      onStatus: (st) => { if (st !== 'połączono') setChip(st.indexOf('łączę') === 0 ? 'łączę z brokerem...' : 'szukam połączenia...', ''); },
+      onOpen: () => { mq.subscribe('prompter/' + code + '/state'); mq.publish('prompter/' + code + '/cmd', {c:'ping'}); setChip('czekam na telefon...', ''); setTimeout(flush, 200); },
       onMessage: (t, m) => { if (t === 'prompter/' + code + '/state') onState(m); }
     });
   }
+  let pending = null;
   function send(c, v){
-    if (!mq || !mq.connected() || code.length !== 6) return;
+    if (code.length !== 6) return;
+    if (!mq || !mq.connected()){ pending = { c: c, v: v }; setChip('czekam na połączenie...', ''); return; }
     mq.publish('prompter/' + code + '/cmd', { c: c, v: v });
+  }
+  function flush(){
+    if (!pending || !mq || !mq.connected()) return;
+    mq.publish('prompter/' + code + '/cmd', pending);
+    pending = null;
   }
   function setChip(txt, cls){
     $('chip').className = 'chip' + (cls ? ' ' + cls : '');
