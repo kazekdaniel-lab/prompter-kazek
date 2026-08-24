@@ -160,9 +160,13 @@
     const s = currentScript();
     const txt = s ? (s.text || '') : EMPTY_TEXT;
     // linie produkcyjne zostają w tekście, ale są wygaszone - oko je przeskakuje
+    const dim = (t) => '<i class="note">' + esc(t) + '</i>';
     textEl.innerHTML = txt.split('\n').map(line => {
-      const body = esc(line).replace(/\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi, m => '<i class="note">' + m + '</i>');
-      return DB.isNote(line) ? '<i class="note">' + esc(line) + '</i>' : body;
+      if (DB.isNote(line)) return dim(line);
+      const p = DB.notePrefix(line);                 // np. `CTA: „...”` - szara etykieta, biała wypowiedź
+      const rest = p ? p.said : line;
+      const body = esc(rest).replace(/\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi, m => dim(m));
+      return p ? dim(p.note) + body : body;
     }).join('\n');
     requestAnimationFrame(relayout);
   }

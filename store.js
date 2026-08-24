@@ -107,14 +107,28 @@
   /* PRZEBITKA:, NA EKRANIE:, BÓL:, DŁUGOŚĆ:, nagłówki z timecodem (HOOK 0-5s)
      oraz całe linie w nawiasie. Zostają w tekście, ale prompter je wygasza
      i nie liczy do czasu czytania. */
-  const NOTE_RE = /^\s*(przebitka|na ekranie|b[oó]l|d[lł]ugo[sś][cć]|gest|uwaga|notatka|hook|mechanizm|rozwi[aą]zanie|cta|intro|outro)\b\s*[:0-9]/i;
+  const NOTE_RE = /^\s*(przebitka|na ekranie|b[oó]l|d[lł]ugo[sś][cć]|gest|uwaga|notatka|hook|mechanizm|rozwi[aą]zanie|cta|intro|outro|wideo|napis)\b/i;
+  const NOTE_ONLY = /^\s*(pauza|cisza|ping|stoper)\s*[.!…:]*\s*$/i;   // sam znacznik w linii
   const NOTE_PAREN = /^\s*\(.*\)\s*$/;
   const INLINE_NOTE = /\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi;
 
-  function isNote(line){ return NOTE_RE.test(line) || NOTE_PAREN.test(line); }
+  const QUOTE = /[„"]/;
+
+  /* Linie typu `CTA: „Zostaw kontakt."` niosą i wskazówkę, i tekst do przeczytania.
+     Wtedy wygaszamy sam początek, a wypowiedź zostaje normalna. */
+  function notePrefix(line){
+    if (!NOTE_RE.test(line)) return null;
+    const m = String(line).match(QUOTE);
+    if (!m) return null;
+    return { note: line.slice(0, m.index), said: line.slice(m.index) };
+  }
+  function isNote(line){
+    return (NOTE_RE.test(line) && !QUOTE.test(line)) || NOTE_ONLY.test(line) || NOTE_PAREN.test(line);
+  }
   function spoken(text){
     return String(text || '').split('\n')
       .filter(l => !isNote(l))
+      .map(l => { const p = notePrefix(l); return p ? p.said : l; })
       .join('\n')
       .replace(INLINE_NOTE, ' ');
   }
@@ -294,7 +308,7 @@
 
   global.TPStore = {
     all, get, raw, writeRaw, count, save, remove, duplicate, reorder, seedIfEmpty,
-    lastId, setLastId, stats, ago, uid, who, isNote, spoken,
+    lastId, setLastId, stats, ago, uid, who, isNote, notePrefix, spoken,
     cloud, setCloud, clearCloud, connected, connect, sync, pairCode, applyPairCode, pullInbox,
     exportJSON, importJSON, importPlain,
     TOKEN_URL: 'https://github.com/settings/tokens/new?scopes=gist&description=Prompter'

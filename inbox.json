@@ -51,6 +51,26 @@
       "id": "velo8",
       "name": "velo8 - sprawdź, czy jesteś w pierwszej piątce",
       "text": "(Przechodzisz przez kadr, nagle się zatrzymuje i wraca)\nCzekaj!\nMasz sklep na Allegro?\nTo zanim zamkniesz ten film, zrób jedną rzecz.\n(podchodzisz bliżej do kamery)\nWpisz swój najważniejszy produkt w wyszukiwarkę Allegro.\nNie nazwę firmy.\nNie nazwę marki.\nTo, czego szuka klient.\n(przebitka: wyszukiwarka)\nI teraz zobacz.\nCzy jesteś w pierwszej piątce?\nJeśli nie — właśnie znalazłeś jeden z powodów, dla których możesz sprzedawać mniej, niż powinieneś.\nBo klient nie kupuje tego, czego nie widzi.\nMy zajmujemy się właśnie tym, żeby Twoje oferty były widoczne dla właściwych klientów.\nPierwsze 30 dni prowadzimy konto za darmo. Wypełnij formularz pod filmem, a my skontaktujemy się z Tobą."
+    },
+    {
+      "id": "reklama1",
+      "name": "reklama1 - porzucony koszyk, odliczanie",
+      "text": "WIDEO 1: Daniel wchodzi szybciuuutko w kadr.\nNapis → „TWÓJ KLIENT WŁAŚNIE PORZUCIŁ KOSZYK.”\nPrzebitka odliczanie: uruchamia się stoper 00:00 → 00:01 → 00:02.\nMówisz: „I właśnie zaczęło się odliczanie do tego, aż kupi u konkurencji.”\nPotem: „Jeśli sprzedajesz karmę, suplementy, kosmetyki albo inne produkty, które klienci kupują regularnie - takich sytuacji masz prawdopodobnie dziesiątki albo setki miesięcznie.”\nPRZEBITKA: lista porzuconych koszyków.\n„Klient wszedł. Wybrał produkt. Dodał do koszyka. Był praktycznie na końcu.”\n„I co dzieje się potem?”\npauza.\n„Najczęściej… nic.”\nPRZEBITKA: koszyk → cisza → konkurencyjny sklep.\n„A przecież nie musisz czekać, aż nagle sobie przypomni.”\n„Możesz automatycznie przypomnieć mu o koszyku kilka minut później. Jeśli nie kupi - wysłać kolejną wiadomość. A jeśli kupi - rozpocząć komunikację, która doprowadzi go do kolejnego zakupu.”\n„To nie jest newsletter.”\n„To system, który reaguje wtedy, kiedy klient jest najbliżej zakupu.”\nCTA: „Jeśli chcesz sprawdzić, ile koszyków możesz odzyskać w swoim sklepie - zostaw kontakt i umów się na darmową konsultację.”"
+    },
+    {
+      "id": "reklama2",
+      "name": "reklama2 - zanim dołożysz do reklam",
+      "text": "WIDEO 2:\nHook:„Stop. Zanim dołożysz kolejne 5 tysięcy do reklam, zobacz to.”\npauza.\n„Masz klientów, którzy już weszli na Twój sklep.”\n„Masz ludzi, którzy dodali produkt do koszyka.”\n„Masz ludzi, którzy już od Ciebie kupili.”\n„A mimo tego dokupujesz kolejnych.”\nTutaj można zrobić dynamiczne przebitki:\nMETA → GOOGLE → 5000 zł → 7000 zł → 10 000 zł\nI:\n„Bo większość sklepów skupia się na tym, jak pozyskać kolejnego klienta.”\n„A dużo tańszy klient… już jest w Twojej bazie.”\n„Problem w tym, że nikt się do niego nie odzywa we właściwym momencie.”\nPotem przykłady:\n„Porzucił koszyk? System reaguje.”\n„Kupił suplement na 30 dni? System wie, że zbliża się moment kolejnego zakupu.”\n„Kupił krem? Możesz zaproponować produkt uzupełniający.”\n„Nie kupił od 90 dni? Możesz spróbować go odzyskać.”\nI dopiero:\n„To właśnie robimy poprzez automatyzację.”\n„Nie chodzi o wysyłanie większej liczby maili.”\n„Chodzi o to, żeby sklep reagował na zachowanie klienta - nawet wtedy, kiedy Ty sobie smacznie śpisz.”\nCTA: „Zostaw kontakt. Sprawdzimy, gdzie możesz naprawdę zarobić.”"
+    },
+    {
+      "id": "reklama3",
+      "name": "reklama3 - za 30 dni kupią ponownie",
+      "text": "WIDEO 3:\ntakie Trochę tiktokowe (nie mówić ''ping'') tylko podłożyć dźwięk.\nDANIEL patrzy w telefon.\nPING.\n„Klient właśnie kupił.”\nPING.\n„Kolejny.”\nPING.\n„I kolejny.”\nNagle:\n„A teraz najlepsze.”\ncisza.\n„Za 30 dni większość z nich będzie musiała kupić ponownie.”\nPatrzysz w kamerę:\n„Kto im o tym przypomni?”\nI dalej:\n„Jeśli sprzedajesz karmę, suplementy, kosmetyki albo produkty kupowane cyklicznie - Twoi klienci sami dają Ci informację, kiedy mogą kupić ponownie.”\n„Musisz tylko umieć ją wykorzystać.”\nPrzebitka:\nzakup → 25 dni → wiadomość → zakup\n„Klient kupił karmę? Przypomnienie przed końcem opakowania.”\n„Kupił suplement? Kontakt w odpowiednim momencie.”\n„Kupił kosmetyk? Propozycja kolejnego produktu.”\n„Nie wrócił? Kolejna sekwencja.”\n„Bez Excela. Bez ręcznego pilnowania. Bez pamiętania o każdym kliencie.”\nI dopiero tutaj:\n„To jest marketing automation.”\n„System robi to za Ciebie.”\nCTA: „Jeśli chcesz sprawdzić, ile dodatkowych zakupów możesz wygenerować z obecnych klientów - zostaw kontakt.”"
+    },
+    {
+      "id": "reklama4",
+      "name": "reklama4 - dlaczego klient ma pamiętać sam",
+      "text": "WIDEO 4:\nDaniel podchodzi do kamery: „Sprzedajesz karmę, suplementy, kosmetyki albo coś, co klient kupuje co kilka tygodni?”\npauza.\n„To mam dla Ciebie jedno pytanie.”\n„Dlaczego klient musi sam pamiętać, żeby wrócić?”\nI tutaj już mocny montaż:\nKUPIŁ → 7 DNI → 14 DNI → 21 DNI → 28 DNI\n„Ty już wiesz, co kupił.”\n„Wiesz, kiedy kupił.”\n„Wiesz mniej więcej, kiedy będzie potrzebował kolejnego.”\n„A mimo to czekasz, aż sam wróci.”\n„I właśnie tutaj tracisz sprzedaż.”\nDalej:\n„Możemy ustawić system, który po zakupie automatycznie prowadzi klienta do kolejnego.”\n„Nie spamuje.”\n„Nie wysyła tego samego wszystkim.”\n„Reaguje na zakup.”\n„Reaguje na czas.”\n„Reaguje na zachowanie klienta.”\n„A Ty nie musisz nic robić.”\nI dopiero:\n„To jest marketing automation.”\nCTA: „Zostaw kontakt. Sprawdzimy, ile dodatkowych zakupów możesz wygenerować z obecnej bazy.”"
     }
   ]
 }
