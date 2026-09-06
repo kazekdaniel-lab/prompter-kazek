@@ -107,23 +107,25 @@
   /* PRZEBITKA:, NA EKRANIE:, BÓL:, DŁUGOŚĆ:, nagłówki z timecodem (HOOK 0-5s)
      oraz całe linie w nawiasie. Zostają w tekście, ale prompter je wygasza
      i nie liczy do czasu czytania. */
-  const NOTE_RE = /^\s*(przebitka|na ekranie|b[oó]l|d[lł]ugo[sś][cć]|gest|uwaga|notatka|hook|mechanizm|rozwi[aą]zanie|cta|intro|outro|wideo|napis)\b/i;
-  const NOTE_ONLY = /^\s*(pauza|cisza|ping|stoper)\s*[.!…:]*\s*$/i;   // sam znacznik w linii
+  const VISUAL_RE = /^\s*(przebitka|na ekranie|napis|wideo|gest|uwaga|notatka|b[oó]l|d[lł]ugo[sś][cć])\b/i;
+  const SECTION_RE = /^\s*(hook|mechanizm|rozwi[aą]zanie|cta|intro|outro)\b[^A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż„"']*/i;
+  const NOTE_ONLY = /^\s*(pauza|cisza|ping|stoper)\s*[.!…:]*\s*$/i;
   const NOTE_PAREN = /^\s*\(.*\)\s*$/;
   const INLINE_NOTE = /\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi;
+  const HAS_WORD = /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]{4,}/;   // timecode "0-5s" to nie jest mowa
 
-  const QUOTE = /[„"]/;
-
-  /* Linie typu `CTA: „Zostaw kontakt."` niosą i wskazówkę, i tekst do przeczytania.
-     Wtedy wygaszamy sam początek, a wypowiedź zostaje normalna. */
+  /* Nagłówek sekcji (HOOK, CTA...) bywa sam, a bywa z wypowiedzią w tej samej linii.
+     W drugim przypadku gasimy tylko etykietę, tekst do przeczytania zostaje normalny. */
   function notePrefix(line){
-    if (!NOTE_RE.test(line)) return null;
-    const m = String(line).match(QUOTE);
+    if (VISUAL_RE.test(line)) return null;
+    const m = String(line).match(SECTION_RE);
     if (!m) return null;
-    return { note: line.slice(0, m.index), said: line.slice(m.index) };
+    const rest = line.slice(m[0].length);
+    return HAS_WORD.test(rest) ? { note: m[0], said: rest } : null;
   }
   function isNote(line){
-    return (NOTE_RE.test(line) && !QUOTE.test(line)) || NOTE_ONLY.test(line) || NOTE_PAREN.test(line);
+    if (VISUAL_RE.test(line) || NOTE_ONLY.test(line) || NOTE_PAREN.test(line)) return true;
+    return SECTION_RE.test(line) && !notePrefix(line);      // sam nagłówek, bez wypowiedzi
   }
   function spoken(text){
     return String(text || '').split('\n')
