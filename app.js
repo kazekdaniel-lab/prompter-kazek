@@ -330,9 +330,9 @@
     recorder.onerror = (e) => failRec('koder zgłosił błąd (' + ((e && e.error && e.error.name) || 'nieznany') + ')');
     watchTracks();
     failReason = '';
-    // timeslice: dane spływają co sekundę zamiast rosnąć w pamięci jednym kawałkiem
-    // (bez tego Safari na iOS potrafi uciąć dłuższe nagranie)
-    recorder.start(1000);
+    // Bez timeslice. Zrzuty co sekundę dawały fragmentowany MP4, przez który iOS
+    // nie proponował już zapisu do Zdjęć - plik leciał prosto do Plików.
+    recorder.start();
     recording = true;
     recBtn.classList.add('recording');
     recbar.classList.add('show');
@@ -436,8 +436,11 @@
   // Zapis / udostępnianie
   $('saveRec').addEventListener('click', shareRecording);
   /* Nazwa pliku bierze tytuł skryptu, z którego nagrywałeś. */
+  const PL = { 'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z',
+               'Ą':'A','Ć':'C','Ę':'E','Ł':'L','Ń':'N','Ó':'O','Ś':'S','Ź':'Z','Ż':'Z' };
   function slug(s){
     return String(s || '').trim()
+      .replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, (c) => PL[c] || c)
       .replace(/[\\/:*?'"<>|#%{}$!@+`=,;.]/g, '')  // znaki kłopotliwe w nazwach plików
       .replace(/\s+/g, '-')
       .replace(/-{2,}/g, '-')
@@ -452,7 +455,7 @@
     const name = slug(title) + '-' + tstamp() + '.' + ext;
     const file = new File([recordedBlob], name, { type: recordedBlob.type });
     if (navigator.canShare && navigator.canShare({ files:[file] })){
-      try{ await navigator.share({ files:[file], title: title }); return; }
+      try{ await navigator.share({ files:[file] }); return; }
       catch(e){ if (e && e.name === 'AbortError') return; }
     }
     // fallback: pobranie pliku
