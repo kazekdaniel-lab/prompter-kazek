@@ -107,7 +107,7 @@
   /* PRZEBITKA:, NA EKRANIE:, BÓL:, DŁUGOŚĆ:, nagłówki z timecodem (HOOK 0-5s)
      oraz całe linie w nawiasie. Zostają w tekście, ale prompter je wygasza
      i nie liczy do czasu czytania. */
-  const VISUAL_RE = /^\s*(przebitka|na ekranie|napis|wideo|gest|uwaga|notatka|b[oó]l|d[lł]ugo[sś][cć])\b/i;
+  const VISUAL_RE = /^\s*(przebitka|na ekranie|napis|wideo|gest|uwaga|notatka|b[oó]l|d[lł]ugo[sś][cć]|baner|karta ko[nń]cowa|burn-in)\b/i;
   const SECTION_RE = /^\s*(hook|mechanizm|rozwi[aą]zanie|cta|intro|outro)\b[^A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż„"']*/i;
   const NOTE_ONLY = /^\s*(pauza|cisza|ping|stoper)\s*[.!…:]*\s*$/i;
   const NOTE_PAREN = /^\s*\(.*\)\s*$/;
