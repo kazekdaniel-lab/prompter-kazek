@@ -194,6 +194,10 @@
 
   /* review */
   #reviewVid{ width:100%; border-radius:14px; background:#000; max-height:52dvh; margin-bottom:14px; }
+  #recParts{ display:flex; flex-direction:column; gap:8px; margin:0 0 14px; }
+  .partrow{ display:flex; align-items:center; justify-content:space-between; gap:10px; background:#202020;
+    border-radius:12px; padding:10px 12px; font-size:14px; color:#ddd; font-variant-numeric:tabular-nums; }
+  .partbtn{ width:auto; padding:0 14px; font-size:14px; font-weight:600; }
   #recFail{ display:none; background:#2a1416; border:1px solid #5a2a2a; border-radius:12px;
     padding:13px 15px; margin:-4px 0 14px; font-size:13.5px; line-height:1.55; color:#ffc9c4; }
   #recFail.show{ display:block; }
@@ -233,7 +237,7 @@
     <div id="readline"></div>
   </div>
 
-  <div id="recbar"><span class="dot"></span><span class="t" id="recTime">0:00</span><span class="t hold" id="recHold">tekst za 3</span></div>
+  <div id="recbar"><span class="dot"></span><span class="t" id="recTime">0:00</span><span class="t hold" id="recHold">tekst za 3</span><span class="t" id="recPart" style="display:none;"></span></div>
 
   <div id="speedq">
     <button class="rbtn" id="spdUp" aria-label="Szybciej">+</button>
@@ -367,7 +371,7 @@
       <button class="btn" id="cloudSync">Synchronizuj</button>
     </div>
     <button class="btn ghost" id="cloudOff" style="margin-top:10px; display:none;">Odłącz od chmury</button>
-    <p class="hint" style="text-align:center; color:#555; margin-top:22px;">wersja 22</p>
+    <p class="hint" style="text-align:center; color:#555; margin-top:22px;">wersja 23</p>
     <p class="hint">Kod parowania generuje <a href="./dashboard.html">dashboard</a> - otwórz go na komputerze, kliknij „Chmura”, skopiuj kod i wklej tutaj. Wtedy skrypty z komputera pojawiają się na telefonie, a to, co dopiszesz w telefonie, wraca na komputer.</p>
   </div>
 
@@ -379,16 +383,18 @@
     <div id="recFail"><div id="recFailTxt"></div>
       <button class="btn" id="recFix" style="margin-top:10px;">Ustaw tryb pewny: 1080p · 30 kl/s · 12 Mb/s</button></div>
     <p class="hint" id="recStats" style="margin:-6px 0 14px;"></p>
+    <div id="recParts"></div>
     <button class="btn primary" id="saveRec" style="margin-bottom:10px;">Zapisz / Udostępnij</button>
     <button class="btn" id="againRec" style="margin-bottom:10px;">Nagraj ponownie</button>
+    <button class="btn ghost" id="delRec" style="margin-bottom:6px;">Usuń z pamięci telefonu</button>
     <p class="hint" id="reviewHint">Tapnij „Zapisz / Udostępnij" i wybierz <b>Zapisz wideo</b>, żeby trafiło do rolki.</p>
   </div>
 
   <div id="backdrop"></div>
 </div>
 
-<script src="./mqtt.js?v=22"></script>
-<script src="./store.js?v=22"></script>
-<script src="./app.js?v=22"></script>
+<script src="./mqtt.js?v=23"></script>
+<script src="./store.js?v=23"></script>
+<script src="./app.js?v=23"></script>
 </body>
 </html>

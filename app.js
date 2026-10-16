@@ -254,7 +254,7 @@
   // ======================================================
   //  Nagrywanie
   // ======================================================
-  let recorder = null, chunks = [], recording = false, recordedBlob = null, recStart = 0, recTimer = null, mime = '';
+  let recording = false, recStart = 0, recTimer = null, mime = '';
   let recScriptName = '';   // tytuł skryptu z chwili startu - trafia do nazwy pliku
   let failReason = '';      // powód, dla którego nagranie skończyło się samo
 
@@ -313,27 +313,108 @@
     });
   }
 
-  function startRecording(){
-    chunks = []; recordedBlob = null; mime = pickMime();
-    const cs = currentScript();
-    recScriptName = (cs && cs.name) || 'prompter';
+  /* ===== Nagrywanie w częściach =====
+     Safari trzyma całe nagranie w RAM aż do zapisu i przy ~300 MB zaczyna się sypać.
+     Dlatego długie nagranie jest cięte na części (ok. 180 MB każda), a każda gotowa
+     część od razu ląduje w pamięci telefonu (IndexedDB), nie w RAM. Nowa część startuje
+     chwilę PRZED zamknięciem poprzedniej, więc na styku nic nie ginie (najwyżej 0,5 s
+     się powtórzy). Każda część to normalny, pełny MP4 - iOS daje "Zapisz wideo". */
+  const SEG_BYTES = 180 * 1048576;
+  let session = null, seg = null, segTimer = null;
+
+  function bitrateGuess(){
+    if (S.vbr) return S.vbr * 1e6;
+    const vt = stream && stream.getVideoTracks()[0];
+    const h = (vt && vt.getSettings && vt.getSettings().height) || 1080;
+    return h > 1200 ? 45e6 : h > 800 ? 14e6 : 6e6;
+  }
+  function segSeconds(){
+    if (window.__SEG_SECS) return window.__SEG_SECS;          // tylko do testów
+    return Math.max(20, Math.min(600, Math.round(SEG_BYTES * 8 / (bitrateGuess() + 192000))));
+  }
+
+  function makeRecorder(){
     const opts = { audioBitsPerSecond: 192000 };
     if (mime) opts.mimeType = mime;
     if (S.vbr) opts.videoBitsPerSecond = S.vbr * 1000000;
-    try{ recorder = new MediaRecorder(stream, opts); }
+    try{ return new MediaRecorder(stream, opts); }
     catch(e){
-      try{ recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
-      catch(e2){ recorder = new MediaRecorder(stream); }
+      try{ return mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+      catch(e2){ return new MediaRecorder(stream); }
     }
-    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-    recorder.onstop = onRecStop;
-    recorder.onerror = (e) => failRec('koder zgłosił błąd (' + ((e && e.error && e.error.name) || 'nieznany') + ')');
+  }
+
+  function startSegment(){
+    const s2 = { rec: makeRecorder(), chunks: [], start: performance.now(), n: session.next++ };
+    s2.rec.ondataavailable = (e) => { if (e.data && e.data.size) s2.chunks.push(e.data); };
+    s2.rec.onstop = () => finishSegment(s2);
+    s2.rec.onerror = (e) => failRec('koder zgłosił błąd (' + ((e && e.error && e.error.name) || 'nieznany') + ')');
+    s2.rec.start();                       // bez timeslice - pełny MP4, nie fragmentowany
+    session.pending++;
+    seg = s2;
+    clearTimeout(segTimer);
+    segTimer = setTimeout(rotate, segSeconds() * 1000);
+    showPartPill();
+  }
+
+  function rotate(){
+    if (!recording || !seg) return;
+    const old = seg;
+    try{
+      startSegment();                     // nowa część rusza, zanim stara się zamknie
+      setTimeout(() => { old.stopAt = performance.now(); try{ old.rec.stop(); }catch(e){} }, 500);
+    }catch(e){
+      // telefon nie pozwolił na dwa nagrania naraz - zamykamy starą i od razu otwieramy nową
+      seg = old;
+      old.restartAfter = true;
+      old.stopAt = performance.now();
+      try{ old.rec.stop(); }catch(e2){}
+    }
+  }
+
+  async function finishSegment(s2){
+    const type = (s2.chunks[0] && s2.chunks[0].type) || mime || 'video/mp4';
+    const blob = new Blob(s2.chunks, { type });
+    s2.chunks = [];
+    const secs = Math.max(0.1, ((s2.stopAt || performance.now()) - s2.start) / 1000);
+    // system zatrzymał bieżącą część, a nikt nie tapnął stopu
+    if (recording && s2 === seg && !s2.stopAt && !s2.restartAfter){
+      failReason = failReason || 'system zatrzymał nagrywanie';
+      recording = false;
+      recUiOff();
+    }
+    if (blob.size){
+      const part = { key: session.id + '-' + String(s2.n).padStart(3, '0'), n: s2.n, secs, size: blob.size, type };
+      try{
+        await idbPut(part.key, { blob, sid: session.id, name: session.name, stamp: session.stamp,
+                                 n: s2.n, secs, type, created: Date.now(), saved: 0 });
+      }catch(e){ part.mem = blob; }     // brak miejsca albo prywatne okno - zostaje w pamięci
+      session.parts.push(part);
+      session.parts.sort((x, y) => x.n - y.n);
+    }
+    session.pending--;
+    if (s2.restartAfter && recording) startSegment();
+    if (!recording && session.pending <= 0) showReview();
+  }
+
+  function showPartPill(){
+    const el = $('recPart');
+    if (!el) return;
+    const n = seg ? seg.n : 1;
+    el.textContent = 'część ' + n;
+    el.style.display = n > 1 ? 'inline-block' : 'none';
+  }
+
+  function startRecording(){
+    mime = pickMime();
+    const cs = currentScript();
+    recScriptName = (cs && cs.name) || 'prompter';
+    session = { id: 'r' + Date.now().toString(36), name: recScriptName, stamp: tstamp(),
+                parts: [], next: 1, pending: 0, files: [] };
     watchTracks();
     failReason = '';
-    // Bez timeslice. Zrzuty co sekundę dawały fragmentowany MP4, przez który iOS
-    // nie proponował już zapisu do Zdjęć - plik leciał prosto do Plików.
-    recorder.start();
     recording = true;
+    startSegment();
     recBtn.classList.add('recording');
     recbar.classList.add('show');
     setChromeHidden(true);
@@ -367,39 +448,151 @@
     recHold.classList.remove('show');
   }
 
-  function stopRecording(){
-    if (!recorder || !recording) return;
-    recording = false;
+  function recUiOff(){
     clearTextDelay();
     setPlaying(false);
     clearInterval(recTimer);
+    clearTimeout(segTimer);
     recBtn.classList.remove('recording');
     recbar.classList.remove('show');
     setChromeHidden(false);
-    try{ recorder.stop(); }catch(e){}
+    const el = $('recPart'); if (el) el.style.display = 'none';
+  }
+
+  function stopRecording(){
+    if (!recording) return;
+    recording = false;
+    recUiOff();
+    if (seg){ seg.stopAt = performance.now(); try{ seg.rec.stop(); }catch(e){} }
   }
 
   function updateRecTime(){
-    const s = Math.floor((performance.now() - recStart) / 1000);
-    recTime.textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+    const s2 = Math.floor((performance.now() - recStart) / 1000);
+    recTime.textContent = Math.floor(s2/60) + ':' + String(s2%60).padStart(2,'0');
   }
 
-  function onRecStop(){
-    // jeśli recording jest wciąż true, to znaczy, że nikt nie tapnął stopu - przerwał system
-    const interrupted = recording || !!failReason;
-    if (recording){ recording = false; clearTextDelay(); setPlaying(false); clearInterval(recTimer);
-      recBtn.classList.remove('recording'); recbar.classList.remove('show'); setChromeHidden(false); }
-    const type = (chunks[0] && chunks[0].type) || mime || 'video/mp4';
-    recordedBlob = new Blob(chunks, { type });
-    if (!recordedBlob.size){ showToast('Puste nagranie' + (failReason ? ': ' + failReason : '')); return; }
-    const secs = Math.max(0.1, (performance.now() - recStart) / 1000);
-    showFail(interrupted, secs);
-    const url = URL.createObjectURL(recordedBlob);
+  // ---------- pamięć telefonu na gotowe części (IndexedDB trzyma pliki na dysku) ----------
+  const IDB_NAME = 'tp_rec_v1', IDB_STORE = 'parts';
+  function idbOpen(){
+    return new Promise((res, rej) => {
+      const r = indexedDB.open(IDB_NAME, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function idbTx(mode, fn){
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(IDB_STORE, mode);
+      const out = fn(tx.objectStore(IDB_STORE));
+      tx.oncomplete = () => { db.close(); res(out && 'result' in out ? out.result : undefined); };
+      tx.onerror = () => { db.close(); rej(tx.error); };
+      tx.onabort = () => { db.close(); rej(tx.error); };
+    });
+  }
+  const idbPut = (k, v) => idbTx('readwrite', st => st.put(v, k));
+  const idbGet = (k) => idbTx('readonly', st => st.get(k));
+  const idbDel = (k) => idbTx('readwrite', st => st.delete(k));
+  async function idbAll(){
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const out = [];
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const cur = tx.objectStore(IDB_STORE).openCursor();
+      cur.onsuccess = () => { const c = cur.result; if (c){ out.push({ key: c.key, v: c.value }); c.continue(); } };
+      tx.oncomplete = () => { db.close(); res(out); };
+      tx.onerror = () => { db.close(); rej(tx.error); };
+    });
+  }
+
+  async function partBlob(p){
+    if (p.mem) return p.mem;
+    const v = await idbGet(p.key);
+    return v ? v.blob : null;
+  }
+  function partFileName(p){
+    const ext = String(p.type || '').includes('webm') ? 'webm' : 'mp4';
+    const multi = session.parts.length > 1;
+    return slug(session.name) + '-' + session.stamp + (multi ? '-cz' + p.n : '') + '.' + ext;
+  }
+  const fmtMB = (b) => { const m = b / 1048576; return (m < 10 ? m.toFixed(1) : m.toFixed(0)) + ' MB'; };
+  const fmtTime = (sec) => Math.floor(sec / 60) + ':' + String(Math.round(sec % 60)).padStart(2, '0');
+
+  /* Po nagraniu: lista części. Pliki przygotowujemy zawczasu, żeby tapnięcie w "Zapisz"
+     od razu otwierało menu iOS (bez czekania, inaczej Safari uznaje, że to nie Ty kliknąłeś). */
+  async function showReview(){
+    const parts = session.parts;
+    if (!parts.length){ showToast('Puste nagranie' + (failReason ? ': ' + failReason : '')); return; }
+    const total = parts.reduce((x, p) => x + p.secs, 0);
+    const bytes = parts.reduce((x, p) => x + p.size, 0);
+    showFail(!!failReason, total);
+
+    session.files = [];
+    for (const p of parts){
+      const b = await partBlob(p);
+      if (b) session.files.push({ p, file: new File([b], partFileName(p), { type: b.type || p.type || 'video/mp4' }) });
+    }
+
     const rv = $('reviewVid');
-    rv.src = url; rv.muted = false;
-    rv.onloadedmetadata = () => showRecStats(rv, secs);
-    showRecStats(rv, secs);
+    rv.preload = 'metadata';               // podgląd bez ładowania całego pliku do pamięci
+    if (session.files[0]) rv.src = URL.createObjectURL(session.files[0].file);
+    rv.muted = false;
+
+    const many = parts.length > 1;
+    $('recStats').innerHTML = '<b>' + esc(session.name) + '</b><br>' +
+      (many ? parts.length + ' części · ' : '') + fmtTime(total) + ' · ' +
+      fmtMB(bytes) + ' · dźwięk: ' + esc(micLabel()) +
+      (many ? '<br>Długie nagranie zostało podzielone na części, żeby iPhone nie zgubił materiału. ' +
+              'Na stykach nic nie ginie - w montażu połącz je po kolei.' : '');
+    $('saveRec').textContent = many ? 'Zapisz wszystkie (' + parts.length + ')' : 'Zapisz / Udostępnij';
+    renderParts();
     openSheet('reviewSheet');
+  }
+
+  function renderParts(){
+    const box = $('recParts');
+    if (!box) return;
+    box.innerHTML = '';
+    if (session.files.length < 2) return;
+    session.files.forEach((f, i) => {
+      const row = document.createElement('div');
+      row.className = 'partrow';
+      row.innerHTML = '<span>Część ' + f.p.n + ' · ' + fmtTime(f.p.secs) + ' · ' +
+                      fmtMB(f.p.size) + '</span>';
+      const btn = document.createElement('button');
+      btn.className = 'iconbtn partbtn';
+      btn.textContent = f.p.savedNow ? 'zapisano' : 'Zapisz';
+      btn.addEventListener('click', () => shareFiles([f]));
+      row.appendChild(btn);
+      box.appendChild(row);
+    });
+  }
+
+  async function shareFiles(list){
+    if (!list.length) return;
+    const files = list.map(f => f.file);
+    if (navigator.canShare && navigator.canShare({ files })){
+      try{
+        await navigator.share({ files });
+        list.forEach(f => { f.p.savedNow = true; markSaved(f.p); });
+        renderParts();
+        return;
+      }catch(e){
+        if (e && e.name === 'AbortError') return;
+        if (list.length > 1){ showToast('Zapisz części po kolei przyciskami poniżej'); return; }
+      }
+    }
+    if (list.length > 1){ showToast('Zapisz części po kolei przyciskami poniżej'); return; }
+    // zapas: zwykłe pobranie pliku
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(files[0]); a.download = files[0].name;
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('Pobrano do plików');
+  }
+  async function markSaved(p){
+    if (p.mem) return;
+    try{ const v = await idbGet(p.key); if (v){ v.saved = Date.now(); await idbPut(p.key, v); } }catch(e){}
   }
 
   function showFail(interrupted, secs){
@@ -425,21 +618,22 @@
     showToast('Ustawione: 1080p, 30 kl/s, 12 Mb/s');
   });
 
-  function showRecStats(rv, secs){
-    const mb = recordedBlob.size / 1048576;
-    const mbps = (recordedBlob.size * 8) / secs / 1000000;
-    const px = (rv.videoWidth && rv.videoHeight) ? rv.videoWidth + '×' + rv.videoHeight + ' · ' : '';
-    $('recStats').innerHTML = '<b>' + esc(recScriptName) + '</b><br>' + px + mb.toFixed(1) + ' MB · ' +
-      mbps.toFixed(1) + ' Mb/s · ' + Math.round(secs) + ' s · dźwięk: ' + esc(micLabel());
-  }
+  $('saveRec').addEventListener('click', () => { if (session) shareFiles(session.files); });
 
-  // Zapis / udostępnianie
-  $('saveRec').addEventListener('click', shareRecording);
+  $('delRec').addEventListener('click', async () => {
+    if (!session) return;
+    if (!confirm('Usunąć to nagranie z pamięci telefonu? Zapisane w Zdjęciach zostaną.')) return;
+    for (const p of session.parts){ try{ await idbDel(p.key); }catch(e){} }
+    session.parts = []; session.files = [];
+    closeSheet();
+    showToast('Usunięte');
+  });
+
   /* Nazwa pliku bierze tytuł skryptu, z którego nagrywałeś. */
   const PL = { 'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z',
                'Ą':'A','Ć':'C','Ę':'E','Ł':'L','Ń':'N','Ó':'O','Ś':'S','Ź':'Z','Ż':'Z' };
-  function slug(s){
-    return String(s || '').trim()
+  function slug(t){
+    return String(t || '').trim()
       .replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, (c) => PL[c] || c)
       .replace(/[\\/:*?'"<>|#%{}$!@+`=,;.]/g, '')  // znaki kłopotliwe w nazwach plików
       .replace(/\s+/g, '-')
@@ -447,27 +641,33 @@
       .replace(/^[-.]+|[-.]+$/g, '')
       .slice(0, 64) || 'prompter';
   }
-
-  async function shareRecording(){
-    if (!recordedBlob) return;
-    const ext = recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
-    const title = recScriptName || (currentScript() && currentScript().name) || 'prompter';
-    const name = slug(title) + '-' + tstamp() + '.' + ext;
-    const file = new File([recordedBlob], name, { type: recordedBlob.type });
-    if (navigator.canShare && navigator.canShare({ files:[file] })){
-      try{ await navigator.share({ files:[file] }); return; }
-      catch(e){ if (e && e.name === 'AbortError') return; }
-    }
-    // fallback: pobranie pliku
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(recordedBlob); a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    showToast('Pobrano do plików');
-  }
   function tstamp(){ const d = new Date(); const p = (x)=>String(x).padStart(2,'0');
     return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds()); }
 
   $('againRec').addEventListener('click', () => { closeSheet(); restartScroll(); });
+
+  /* Sprzątanie i ratunek: zapisane części starsze niż 12 h znikają z pamięci telefonu.
+     Niezapisane zostają - jeśli apka padła w trakcie, przy następnym otwarciu można je zapisać. */
+  async function recoverParts(){
+    let all;
+    try{ all = await idbAll(); }catch(e){ return; }
+    const now = Date.now(), left = {};
+    for (const r of all){
+      if (r.v.saved && now - r.v.saved > 12 * 3600 * 1000){ try{ await idbDel(r.key); }catch(e){} continue; }
+      if (!r.v.saved) (left[r.v.sid] = left[r.v.sid] || []).push(r);
+    }
+    const sids = Object.keys(left).sort();
+    if (!sids.length) return;
+    const sid = sids[sids.length - 1];
+    const rows = left[sid].sort((x, y) => x.v.n - y.v.n);
+    const total = rows.reduce((x, r) => x + (r.v.secs || 0), 0);
+    if (!confirm('Masz niezapisane nagranie „' + rows[0].v.name + '” (' + rows.length +
+                 (rows.length > 1 ? ' części, ' : ' część, ') + fmtTime(total) + '). Otworzyć, żeby je zapisać?')) return;
+    session = { id: sid, name: rows[0].v.name, stamp: rows[0].v.stamp, next: 0, pending: 0, files: [],
+                parts: rows.map(r => ({ key: r.key, n: r.v.n, secs: r.v.secs, size: r.v.blob.size, type: r.v.type })) };
+    failReason = '';
+    showReview();
+  }
 
   function setChromeHidden(hidden){ $('bar').classList.toggle('rec', hidden); $('recCaption').classList.toggle('show', hidden); }
 
@@ -835,6 +1035,7 @@
   acquireWake();
   initCamera();
   updateCloudUI();
+  setTimeout(recoverParts, 1200);
   DB.pullInbox().then(n => {
     if (!n) return;
     if (!DB.get(currentId)){ const f = DB.all()[0]; currentId = f ? f.id : ''; DB.setLastId(currentId); renderText(); }
