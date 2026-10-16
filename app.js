@@ -320,7 +320,7 @@
      chwilę PRZED zamknięciem poprzedniej, więc na styku nic nie ginie (najwyżej 0,5 s
      się powtórzy). Każda część to normalny, pełny MP4 - iOS daje "Zapisz wideo". */
   const SEG_BYTES = 180 * 1048576;
-  let session = null, seg = null, segTimer = null;
+  let session = null, seg = null;
 
   function bitrateGuess(){
     if (S.vbr) return S.vbr * 1e6;
@@ -352,9 +352,49 @@
     s2.rec.start();                       // bez timeslice - pełny MP4, nie fragmentowany
     session.pending++;
     seg = s2;
-    clearTimeout(segTimer);
-    segTimer = setTimeout(rotate, segSeconds() * 1000);
+    scheduleCut();
     showPartPill();
+  }
+
+  /* Zapowiedź cięcia: 5 s przed końcem części w górnym pasku leci "cięcie za 5...1",
+     potem "PAUZA" - tekst staje na 1,5 s, Ty milkniesz i cięcie wypada w ciszy. */
+  let cutWarnT = null, cutTick = null, cutT = null;
+  function clearCutTimers(){
+    clearTimeout(cutWarnT); clearInterval(cutTick); clearTimeout(cutT);
+    cutWarnT = cutTick = cutT = null;
+  }
+  function scheduleCut(){
+    clearCutTimers();
+    const T = segSeconds();
+    const warn = Math.min(5, Math.max(1, Math.floor(T / 2)));
+    cutWarnT = setTimeout(() => cutCountdown(warn), (T - warn) * 1000);
+  }
+  function cutCountdown(n){
+    if (!recording) return;
+    const el = $('recCut');
+    let left = n;
+    el.textContent = 'cięcie za ' + left;
+    el.classList.add('show');
+    cutTick = setInterval(() => {
+      if (!recording){ clearInterval(cutTick); return; }
+      left--;
+      if (left > 0){ el.textContent = 'cięcie za ' + left; return; }
+      clearInterval(cutTick); cutTick = null;
+      doCut();
+    }, 1000);
+  }
+  function doCut(){
+    const el = $('recCut');
+    el.textContent = 'PAUZA';
+    const wasPlaying = playing;
+    if (wasPlaying) setPlaying(false);           // tekst staje, żebyś naturalnie zamilkł
+    cutT = setTimeout(() => {
+      rotate();                                  // cięcie w środku pauzy
+      cutT = setTimeout(() => {
+        el.classList.remove('show');
+        if (recording && wasPlaying && !playing) setPlaying(true);
+      }, 1000);
+    }, 500);
   }
 
   function rotate(){
@@ -452,7 +492,8 @@
     clearTextDelay();
     setPlaying(false);
     clearInterval(recTimer);
-    clearTimeout(segTimer);
+    clearCutTimers();
+    const ce = $('recCut'); if (ce) ce.classList.remove('show');
     recBtn.classList.remove('recording');
     recbar.classList.remove('show');
     setChromeHidden(false);
