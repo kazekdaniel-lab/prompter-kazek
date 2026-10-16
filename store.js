@@ -113,6 +113,12 @@
   const NOTE_PAREN = /^\s*\(.*\)\s*$/;
   const INLINE_NOTE = /\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi;
   const HAS_WORD = /[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]{4,}/;   // timecode "0-5s" to nie jest mowa
+  // opis scenariusza: "Do kogo:", "Format:", "Do sprawdzenia:", "Termin ważności:"
+  const META_RE = /^\s*(do kogo|format|do sprawdzenia|termin wa[zż]no[sś]ci)\s*:/i;
+  // nagłówek typu "VELO #1 - ..." nad scenariuszem
+  const HEAD_RE = /^\s*(velo|lokeo|invette)\s*#\s*\d+/i;
+  // od "Mechanika:" / "Hooki do testu:" w dół jest już tylko opis dla montażysty
+  const TAIL_RE = /^\s*(mechanika|hooki do testu)\b/i;
 
   /* Nagłówek sekcji (HOOK, CTA...) bywa sam, a bywa z wypowiedzią w tej samej linii.
      W drugim przypadku gasimy tylko etykietę, tekst do przeczytania zostaje normalny. */
@@ -124,12 +130,22 @@
     return HAS_WORD.test(rest) ? { note: m[0], said: rest } : null;
   }
   function isNote(line){
-    if (VISUAL_RE.test(line) || NOTE_ONLY.test(line) || NOTE_PAREN.test(line)) return true;
+    if (VISUAL_RE.test(line) || NOTE_ONLY.test(line) || NOTE_PAREN.test(line) || META_RE.test(line) || HEAD_RE.test(line)) return true;
     return SECTION_RE.test(line) && !notePrefix(line);      // sam nagłówek, bez wypowiedzi
   }
+  /* Maska linii: true = wskazówka do wygaszenia. Uwzględnia ogon scenariusza,
+     czyli wszystko od "Mechanika:" albo "Hooki do testu:" do końca. */
+  function noteMask(text){
+    let tail = false;
+    return String(text || '').split('\n').map(l => {
+      if (TAIL_RE.test(l)) tail = true;
+      return tail || isNote(l);
+    });
+  }
   function spoken(text){
+    const mask = noteMask(text);
     return String(text || '').split('\n')
-      .filter(l => !isNote(l))
+      .filter((l, i) => !mask[i])
       .map(l => { const p = notePrefix(l); return p ? p.said : l; })
       .join('\n')
       .replace(INLINE_NOTE, ' ');
@@ -310,7 +326,7 @@
 
   global.TPStore = {
     all, get, raw, writeRaw, count, save, remove, duplicate, reorder, seedIfEmpty,
-    lastId, setLastId, stats, ago, uid, who, isNote, notePrefix, spoken,
+    lastId, setLastId, stats, ago, uid, who, isNote, notePrefix, noteMask, spoken,
     cloud, setCloud, clearCloud, connected, connect, sync, pairCode, applyPairCode, pullInbox,
     exportJSON, importJSON, importPlain,
     TOKEN_URL: 'https://github.com/settings/tokens/new?scopes=gist&description=Prompter'

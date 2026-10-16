@@ -161,8 +161,9 @@
     const txt = s ? (s.text || '') : EMPTY_TEXT;
     // linie produkcyjne zostają w tekście, ale są wygaszone - oko je przeskakuje
     const dim = (t) => '<i class="note">' + esc(t) + '</i>';
-    textEl.innerHTML = txt.split('\n').map(line => {
-      if (DB.isNote(line)) return dim(line);
+    const mask = DB.noteMask(txt);
+    textEl.innerHTML = txt.split('\n').map((line, i) => {
+      if (mask[i]) return dim(line);
       const p = DB.notePrefix(line);                 // np. `CTA: „...”` - szara etykieta, biała wypowiedź
       const rest = p ? p.said : line;
       const body = esc(rest).replace(/\((gest|przebitka|pauza|uwaga)\s*:[^)]*\)/gi, m => dim(m));
